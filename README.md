@@ -34,10 +34,11 @@ Ripcord is a high-speed media downloader and queue management dashboard designed
 
 ### Option A: 1-Click Launchers (Easiest)
 
-- **Windows**: Double-click `start.bat`
+- **Windows**: Double-click `run.bat` (or `start.bat`), or right-click `run.ps1` and choose **"Run with PowerShell"**.
 - **Mac / Linux**: Double-click or run `./start.sh`
+- **Any Browser / Helper**: Double-click `open.html` for a graphical launch assistant that checks if your local server is running.
 
-The launcher automatically installs dependencies, prepares `yt-dlp` for your OS, launches the local server, and automatically pops open `http://localhost:3000` in your default browser!
+The launcher automatically detects your Node.js path, installs dependencies, launches the local server, and pops open `http://localhost:3000` in your default browser!
 
 ---
 

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ripcord - Launch Assistant</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0f1115;
+      color: #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .card {
+      background: #181b22;
+      border: 1px solid #282d39;
+      border-radius: 16px;
+      max-width: 580px;
+      width: 100%;
+      padding: 32px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: #2563eb;
+      color: #fff;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+    p.subtitle {
+      color: #9ca3af;
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+    .options {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .option-box {
+      background: #1f232d;
+      border: 1px solid #2e3544;
+      border-radius: 12px;
+      padding: 20px;
+      transition: border-color 0.2s;
+    }
+    .option-box:hover {
+      border-color: #3b82f6;
+    }
+    .option-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .option-desc {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-bottom: 14px;
+      line-height: 1.4;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-secondary { background: #2e3544; color: #e5e7eb; }
+    .btn-secondary:hover { background: #3b4458; }
+    .btn-success { background: #10b981; color: #fff; }
+    .btn-success:hover { background: #059669; }
+    .step-list {
+      margin-left: 20px;
+      font-size: 13px;
+      color: #d1d5db;
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+    .status-pill {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: #2e3544;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #9ca3af;
+    }
+    .status-dot.active { background: #10b981; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">Ripcord Launcher</span>
+    <h1>Launch Ripcord</h1>
+    <p class="subtitle">Choose how you want to open and use Ripcord on your system:</p>
+
+    <div class="options">
+      <!-- Option A: Check local server -->
+      <div class="option-box">
+        <div class="option-title">💻 Option 1: Run on Your Local Computer</div>
+        <p class="option-desc">If your local server is running, you can connect directly:</p>
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <a href="http://localhost:3000" id="localLink" class="btn btn-primary" target="_blank">Open Local Ripcord (localhost:3000)</a>
+          <button class="btn btn-secondary" onclick="checkLocalServer()">Check Server Status</button>
+        </div>
+        <div id="statusBox" class="status-pill">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Checking if localhost:3000 is running...</span>
+        </div>
+      </div>
+
+      <!-- Option B: Local Setup Instructions -->
+      <div class="option-box">
+        <div class="option-title">⚙️ Having trouble opening start.bat?</div>
+        <p class="option-desc">If the black command window flashes and closes, follow these 3 quick checks:</p>
+        <ol class="step-list">
+          <li><strong>Extract the folder first:</strong> Make sure you right-clicked the downloaded ZIP file and chose <em>"Extract All..."</em>. Running inside the zip will fail.</li>
+          <li><strong>Install Node.js:</strong> Ensure Node.js (v18+) is installed from <a href="https://nodejs.org" target="_blank" style="color: #60a5fa;">nodejs.org</a>.</li>
+          <li><strong>Run alternative launcher:</strong> Double-click <code style="background:#111; padding:2px 6px; border-radius:4px;">run.bat</code> or right-click <code style="background:#111; padding:2px 6px; border-radius:4px;">run.ps1</code> and choose <em>"Run with PowerShell"</em>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function checkLocalServer() {
+      const text = document.getElementById('statusText');
+      const dot = document.getElementById('statusDot');
+      const link = document.getElementById('localLink');
+      text.innerText = 'Pinging localhost:3000...';
+      try {
+        const res = await fetch('http://localhost:3000/api/info', { method: 'GET', mode: 'cors' });
+        if (res.ok) {
+          dot.classList.add('active');
+          text.innerText = 'Local Ripcord server is RUNNING!';
+          link.classList.remove('btn-primary');
+          link.classList.add('btn-success');
+        } else {
+          throw new Error();
+        }
+      } catch (e) {
+        dot.classList.remove('active');
+        text.innerText = 'Local server not running yet. Run run.bat or start.bat first.';
+      }
+    }
+    checkLocalServer();
+  </script>
+</body>
+</html>
