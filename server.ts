@@ -16,8 +16,35 @@ if (!fs.existsSync(DOWNLOADS_DIR)) {
   fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
 }
 
-const BIN_YTDLP = path.resolve(process.cwd(), 'bin', 'yt-dlp');
+const isWindows = process.platform === 'win32';
+const BIN_YTDLP = path.resolve(process.cwd(), 'bin', isWindows ? 'yt-dlp.exe' : 'yt-dlp');
 const COOKIES_FILE = path.resolve(process.cwd(), 'cookies.txt');
+
+async function ensureYtDlp() {
+  if (fs.existsSync(BIN_YTDLP)) return;
+  const binDir = path.dirname(BIN_YTDLP);
+  if (!fs.existsSync(binDir)) fs.mkdirSync(binDir, { recursive: true });
+  
+  const url = isWindows
+    ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+    : process.platform === 'darwin'
+    ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos'
+    : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux';
+
+  try {
+    console.log(`[Ripcord] yt-dlp missing. Auto-downloading latest release for ${process.platform}...`);
+    const resp = await fetch(url);
+    if (resp.ok && resp.body) {
+      const fileStream = fs.createWriteStream(BIN_YTDLP);
+      const { pipeline } = await import('stream/promises');
+      await pipeline(resp.body as any, fileStream);
+      if (!isWindows) fs.chmodSync(BIN_YTDLP, 0o755);
+      console.log('[Ripcord] yt-dlp is installed and ready.');
+    }
+  } catch (err) {
+    console.warn('[Ripcord] Auto-download of yt-dlp failed:', err);
+  }
+}
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -783,6 +810,8 @@ async function startServer() {
       res.sendFile(path.resolve(process.cwd(), 'dist', 'index.html'));
     });
   }
+
+  ensureYtDlp().catch(console.error);
 
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Ripcord Server running on http://0.0.0.0:${PORT}`);

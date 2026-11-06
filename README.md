@@ -26,17 +26,26 @@ Ripcord is a high-speed media downloader and queue management dashboard designed
 - [FFmpeg](https://ffmpeg.org/) (installed and available in `PATH`)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) (optional: auto-downloaded or placed in `bin/yt-dlp`)
 
-### Installation & Run
+## Quick 1-Click Launch
+
+### Option A: 1-Click Launchers (Easiest)
+
+- **Windows**: Double-click `start.bat`
+- **Mac / Linux**: Double-click or run `./start.sh`
+
+The launcher automatically installs dependencies, prepares `yt-dlp` for your OS, launches the local server, and automatically pops open `http://localhost:3000` in your default browser!
+
+---
+
+### Option B: Manual Command Line
 
 ```bash
 # 1. Clone repository
-git clone <your-repository-url>
+git clone https://github.com/shloky-11/ripcord.git
 cd ripcord
 
-# 2. Install dependencies
+# 2. Install dependencies & start
 npm install
-
-# 3. Start development server
 npm run dev
 ```
 
