@@ -1,10 +1,12 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import http from 'http';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
-import { spawn, ChildProcess } from 'child_process';
-import { EngineSettings, QueueItem, SystemStats, VideoMetadata, MediaFormat } from './src/types';
+import { spawn } from 'child_process';
+import type { ChildProcess } from 'child_process';
+import type { EngineSettings, QueueItem, SystemStats, VideoMetadata, MediaFormat } from './src/types/index.ts';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
