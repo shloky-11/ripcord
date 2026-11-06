@@ -5,9 +5,11 @@ import {
   Sun, 
   Moon, 
   Zap,
-  ListPlus
+  ListPlus,
+  DownloadCloud
 } from 'lucide-react';
 import { EngineSettings } from '../types';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface HeaderProps {
   darkMode: boolean;
@@ -30,6 +32,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenBatchModal,
   settings,
 }) => {
+  const { isInstallable, isInstalled, install } = usePWAInstall();
+
   return (
     <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-sm sticky top-0 z-30 transition-colors">
       {/* Zone 1: Brand Wordmark */}
@@ -80,6 +84,17 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Zone 3: Primary Actions & Toggles */}
       <div className="flex items-center gap-2 shrink-0">
+        {isInstallable && !isInstalled && (
+          <button
+            onClick={install}
+            title="Install Ripcord as a standalone desktop app"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+          >
+            <DownloadCloud className="w-3.5 h-3.5" />
+            <span>Install Desktop App</span>
+          </button>
+        )}
+
         <button
           onClick={onOpenBatchModal}
           className="hidden sm:flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors whitespace-nowrap cursor-pointer"
