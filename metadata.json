@@ -1,0 +1,6 @@
+{
+  "name": "PulseTube - Fast Video & Audio Downloader",
+  "description": "High-speed local YouTube video and audio downloader supporting batch queues, concurrent streams, local folder storage, and audio extraction.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
