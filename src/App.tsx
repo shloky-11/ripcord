@@ -323,6 +323,7 @@ export default function App() {
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenBatchModal={() => setIsBatchModalOpen(true)}
         settings={settings}
+        onToast={showToast}
       />
 
       {/* Main Workspace Viewport */}

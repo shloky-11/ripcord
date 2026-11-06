@@ -1,6 +1,8 @@
 # Ripcord — High-Speed Stream Ripper & Local Archive
 
-Launch Online (No Install Needed)**: [**Open Ripcord Live**](https://ais-pre-c7ljzpbr3rihngtwqdrgmy-504758234967.asia-east1.run.app)
+> **Everlasting Access**:
+> - **In AI Studio / Cloud**: Open directly via the **Preview Panel** or the **Popout / Open in New Tab** button in the AI Studio toolbar.
+> - **On Your Computer (Permanent & Local)**: Run `start.bat` (Windows) or `./start.sh` (Mac/Linux), or run `npm run dev` and open **[http://localhost:3000](http://localhost:3000)**.
 
 Ripcord is a high-speed media downloader and queue management dashboard designed to extract video (MP4) and audio (MP3/M4A/FLAC) streams directly to a designated local folder on your computer.
 
