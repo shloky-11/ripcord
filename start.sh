@@ -5,20 +5,44 @@ cd "$(dirname "$0")"
 echo "==================================================="
 echo "            Launching Ripcord in 1-Click"
 echo "==================================================="
+echo ""
 
-if ! command -v node &> /dev/null; then
-    echo "[ERROR] Node.js is not installed!"
-    echo "Please install Node.js from https://nodejs.org"
+if [ ! -f "package.json" ]; then
+    echo "[ERROR] package.json not found in this directory."
+    echo "Please make sure you have extracted the archive completely."
+    read -p "Press Enter to exit..."
     exit 1
 fi
 
-if [ ! -d "node_modules" ]; then
-    echo "[1/3] Installing dependencies (first run only)..."
-    npm install
+if ! command -v node &> /dev/null; then
+    echo "[ERROR] Node.js is not installed on this computer."
+    echo "Please download and install Node.js (LTS version) from https://nodejs.org"
+    read -p "Press Enter to exit..."
+    exit 1
 fi
 
-echo "[2/3] Opening browser at http://localhost:3000..."
+echo "[1/3] Node.js detected: $(node -v)"
+
+if [ ! -d "node_modules" ]; then
+    echo "[2/3] Installing dependencies (first run only, please wait)..."
+    npm install
+    if [ $? -ne 0 ]; then
+        echo "[ERROR] npm install failed. Please check your internet connection."
+        read -p "Press Enter to exit..."
+        exit 1
+    fi
+else
+    echo "[2/3] Dependencies ready."
+fi
+
+echo "[3/3] Opening browser at http://localhost:3000..."
 (sleep 2 && (open http://localhost:3000 2>/dev/null || xdg-open http://localhost:3000 2>/dev/null)) &
 
-echo "[3/3] Starting Ripcord server..."
+echo ""
+echo "==================================================="
+echo " Ripcord is now RUNNING at http://localhost:3000"
+echo " Press Ctrl+C in this terminal to stop the server."
+echo "==================================================="
+echo ""
+
 npm run dev
