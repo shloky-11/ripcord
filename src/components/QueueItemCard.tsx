@@ -6,6 +6,7 @@ import {
   Trash2, 
   FolderCheck, 
   FolderDown, 
+  Folder,
   Video, 
   Music, 
   CheckCircle2, 

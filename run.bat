@@ -1,16 +1,16 @@
 @echo off
 :: Force the command prompt window to STAY OPEN under cmd /k so it NEVER closes or flashes
-if not defined RIPCORD_INTERACTIVE (
-    set "RIPCORD_INTERACTIVE=1"
+if not defined PULSETUBE_INTERACTIVE (
+    set "PULSETUBE_INTERACTIVE=1"
     cmd /k ""%~f0" %*"
     exit /b
 )
 
-title Ripcord - High-Speed Stream Ripper
-color 0A
+title PulseTube - Windows 11 Desktop Workstation
+color 0B
 
 echo ===================================================
-echo             Launching Ripcord in 1-Click
+echo        Launching PulseTube Windows 11 Workstation
 echo ===================================================
 echo.
 
@@ -55,15 +55,12 @@ if errorlevel 1 (
     echo  ERROR: Node.js was not detected on your computer!
     echo ===================================================
     echo.
-    echo Ripcord needs Node.js (version 18 or newer) to run locally.
+    echo PulseTube needs Node.js (version 18 or newer) to run locally.
     echo.
     echo Opening https://nodejs.org/en/download/ in your browser...
     explorer "https://nodejs.org/en/download/"
     echo.
     echo Once you install Node.js, run run.bat again!
-    echo.
-    echo (NOTE: You can also use Ripcord directly online in your browser
-    echo  without installing Node.js - see README.md or open.html)
     echo.
     echo Press any key to exit...
     pause >nul
@@ -91,14 +88,14 @@ if not exist "node_modules\" (
 )
 echo.
 
-:: 4. Launch browser using explorer.exe (prevents 'start' command recursion bug on Windows)
-echo [3/3] Opening Ripcord at http://localhost:3000...
+:: 4. Launch browser using explorer.exe
+echo [3/3] Opening PulseTube at http://localhost:3000...
 explorer "http://localhost:3000"
 
 echo.
 echo ===================================================
-echo  Ripcord is now RUNNING at http://localhost:3000
-echo  Keep this black window open while using Ripcord!
+echo  PulseTube is now RUNNING at http://localhost:3000
+echo  Keep this console window open while using PulseTube!
 echo  To stop the server, press Ctrl+C or close this window.
 echo ===================================================
 echo.
@@ -107,10 +104,10 @@ call npm run dev
 if errorlevel 1 (
     color 0C
     echo.
-    echo [ERROR] Ripcord stopped unexpectedly (code %errorlevel%).
+    echo [ERROR] PulseTube stopped unexpectedly (code %errorlevel%).
 )
 
 echo.
-echo Ripcord server stopped.
+echo PulseTube server stopped.
 echo Press any key to close this window...
 pause >nul

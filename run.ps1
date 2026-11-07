@@ -1,6 +1,6 @@
 # PowerShell 1-Click Launcher for Windows
 Write-Host "===================================================" -ForegroundColor Cyan
-Write-Host "            Launching Ripcord in 1-Click           " -ForegroundColor Cyan
+Write-Host "    Launching PulseTube Windows 11 Desktop Workstation" -ForegroundColor Cyan
 Write-Host "===================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -48,8 +48,8 @@ Start-Process "http://localhost:3000"
 
 Write-Host ""
 Write-Host "===================================================" -ForegroundColor Cyan
-Write-Host " Ripcord is RUNNING at http://localhost:3000       " -ForegroundColor Cyan
-Write-Host " Keep this PowerShell window open while using it! " -ForegroundColor Cyan
+Write-Host " PulseTube is RUNNING at http://localhost:3000     " -ForegroundColor Cyan
+Write-Host " Keep this PowerShell window open while using it!  " -ForegroundColor Cyan
 Write-Host "===================================================" -ForegroundColor Cyan
 Write-Host ""
 

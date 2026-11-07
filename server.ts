@@ -895,6 +895,20 @@ app.get('/api/download/stream/:id', (req: Request, res: Response) => {
   }
 });
 
+// Download native Windows .exe launcher
+app.get('/api/download/pulsetube.exe', (_req: Request, res: Response) => {
+  const exePath = path.resolve(process.cwd(), 'PulseTube.exe');
+  if (fs.existsSync(exePath)) {
+    const stat = fs.statSync(exePath);
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Content-Type', 'application/vnd.microsoft.portable-executable');
+    res.setHeader('Content-Disposition', 'attachment; filename="PulseTube.exe"');
+    fs.createReadStream(exePath).pipe(res);
+  } else {
+    res.status(404).json({ message: 'PulseTube.exe not yet built' });
+  }
+});
+
 // Dev vs Prod Vite mounting
 async function startServer() {
   const httpServer = http.createServer(app);

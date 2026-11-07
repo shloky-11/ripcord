@@ -173,7 +173,7 @@ export default function App() {
   }) => {
     try {
       setIsSubmitting(true);
-      const res = await api.addToQueue(params);
+      await api.addToQueue(params);
       showToast(`Added to download queue`);
       await fetchQueueState();
     } catch (err: any) {
@@ -202,11 +202,11 @@ export default function App() {
 
   const handleAddSampleBatch = async () => {
     try {
-      await api.addSampleBatch();
-      showToast('Added 3 sample media streams to queue');
+      const res = await api.addSampleBatch();
+      showToast(`Loaded ${res.items.length} high-speed test streams`);
       await fetchQueueState();
     } catch (err: any) {
-      showToast(err.message || 'Failed to add sample batch');
+      showToast('Failed to add sample batch');
     }
   };
 
@@ -237,13 +237,13 @@ export default function App() {
 
   const handlePauseAll = async () => {
     await api.pauseAll();
-    showToast('All downloads paused');
+    showToast('Paused all active downloads');
     await fetchQueueState();
   };
 
   const handleResumeAll = async () => {
     await api.resumeAll();
-    showToast('All downloads resumed');
+    showToast('Resumed queued downloads');
     await fetchQueueState();
   };
 
@@ -262,19 +262,6 @@ export default function App() {
     } else {
       showToast(res.error || 'Failed to save file');
     }
-  };
-
-  const handleSaveAllCompletedToFolder = async () => {
-    const completedItems = items.filter((i) => i.status === 'completed' && i.fileName);
-    if (completedItems.length === 0) return;
-
-    let savedCount = 0;
-    for (const item of completedItems) {
-      const downloadUrl = api.getDownloadUrl(item.id);
-      const res = await localFolderService.saveFileToFolder(item.fileName!, downloadUrl);
-      if (res.success) savedCount++;
-    }
-    showToast(`Saved ${savedCount} completed files to ${folderName}`);
   };
 
   const handleSelectFolder = async () => {
@@ -297,14 +284,12 @@ export default function App() {
   // Filtered Queue Items
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      // Filter by status tab
       if (activeFilter === 'downloading' && item.status !== 'downloading' && item.status !== 'processing') return false;
       if (activeFilter === 'queued' && item.status !== 'queued') return false;
       if (activeFilter === 'completed' && item.status !== 'completed') return false;
       if (activeFilter === 'paused' && item.status !== 'paused') return false;
       if (activeFilter === 'error' && item.status !== 'error') return false;
 
-      // Filter by search query
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         const matchesTitle = item.title.toLowerCase().includes(query);
@@ -331,7 +316,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 transition-colors">
-      {/* Top Bar Contract */}
+      {/* Top Bar Navigation */}
       <Header
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode(!darkMode)}
@@ -448,52 +433,39 @@ export default function App() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Filter queue..."
-                  className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus:outline-hidden"
+                  placeholder="Search queue..."
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
                 />
               </div>
 
-              {/* Bulk Actions */}
-              {tabCounts.downloading > 0 ? (
+              {stats.activeDownloads > 0 ? (
                 <button
                   onClick={handlePauseAll}
-                  title="Pause all active downloads"
-                  className="p-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer text-xs flex items-center gap-1"
+                  title="Pause all in-flight downloads"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-xs font-semibold text-neutral-700 dark:text-neutral-200 transition-colors whitespace-nowrap cursor-pointer"
                 >
                   <Pause className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Pause All</span>
                 </button>
-              ) : tabCounts.paused > 0 ? (
+              ) : (
                 <button
                   onClick={handleResumeAll}
-                  title="Resume all paused downloads"
-                  className="p-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-blue-600 dark:text-blue-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer text-xs flex items-center gap-1"
+                  title="Resume all queued/paused downloads"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-xs font-semibold text-neutral-700 dark:text-neutral-200 transition-colors whitespace-nowrap cursor-pointer"
                 >
-                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <Play className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Resume All</span>
                 </button>
-              ) : null}
+              )}
 
               {tabCounts.completed > 0 && (
-                <>
-                  <button
-                    onClick={handleSaveAllCompletedToFolder}
-                    title={`Save all ${tabCounts.completed} completed files to local folder`}
-                    className="p-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer text-xs flex items-center gap-1 font-medium"
-                  >
-                    <FolderDown className="w-3.5 h-3.5 text-blue-500" />
-                    <span className="hidden sm:inline">Save All</span>
-                  </button>
-
-                  <button
-                    onClick={handleClearCompleted}
-                    title="Clear completed downloads from queue"
-                    className="p-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer text-xs flex items-center gap-1"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Clear</span>
-                  </button>
-                </>
+                <button
+                  onClick={handleClearCompleted}
+                  title="Clear completed downloads from queue"
+                  className="p-2 rounded-lg text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               )}
             </div>
           </div>
