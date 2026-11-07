@@ -1,19 +1,19 @@
 # PowerShell 1-Click Launcher for Windows
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $ScriptDir
+
 $host.UI.RawUI.WindowTitle = "Ripcord - High-Speed Stream Engine"
 Write-Host ""
 Write-Host "  ===================================================================" -ForegroundColor Cyan
-Write-Host "    ██████╗  ██╗ ██████╗   ██████╗  ██████╗  ██████╗  ██████╗ " -ForegroundColor Cyan
-Write-Host "    ██╔══██╗ ██║ ██╔══██╗ ██╔════╝ ██╔═══██╗ ██╔══██╗ ██╔══██╗" -ForegroundColor Cyan
-Write-Host "    ██████╔╝ ██║ ██████╔╝ ██║      ██║   ██║ ██████╔╝ ██║  ██║" -ForegroundColor Cyan
-Write-Host "    ██╔══██╗ ██║ ██╔═══╝  ██║      ██║   ██║ ██╔══██╗ ██║  ██║" -ForegroundColor Cyan
-Write-Host "    ██║  ██║ ██║ ██║      ╚██████╗ ╚██████╔╝ ██║  ██║ ██████╔╝" -ForegroundColor Cyan
-Write-Host "    ╚═╝  ╚═╝ ╚═╝ ╚═╝       ╚═════╝  ╚═════╝  ╚═╝  ╚═╝ ╚═════╝ " -ForegroundColor Cyan
-Write-Host "           ⚡ HIGH-SPEED STREAM ENGINE & MEDIA SUITE ⚡        " -ForegroundColor Yellow
+Write-Host "    ######   ######  ######   #####   #####   ######   #####  " -ForegroundColor Cyan
+Write-Host "    ##   ##    ##    ##   ## ##   ## ##   ##  ##   ##  ##  ## " -ForegroundColor Cyan
+Write-Host "    ######     ##    ######  ##      ##   ##  ######   ##   ##" -ForegroundColor Cyan
+Write-Host "    ##  ##     ##    ##      ##   ## ##   ##  ##  ##   ##  ## " -ForegroundColor Cyan
+Write-Host "    ##   ##  ######  ##       #####   #####   ##   ##  #####  " -ForegroundColor Cyan
+Write-Host ""
+Write-Host "          [ HIGH-SPEED STREAM ENGINE AND MEDIA SUITE ]        " -ForegroundColor Yellow
 Write-Host "  ===================================================================" -ForegroundColor Cyan
 Write-Host ""
-
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $ScriptDir
 
 # Auto-detect standard Node.js installations in case PATH wasn't refreshed
 $env:PATH += ";$env:ProgramFiles\nodejs;$env:LOCALAPPDATA\Programs\node"

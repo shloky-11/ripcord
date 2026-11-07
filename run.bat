@@ -1,6 +1,8 @@
 @echo off
 setlocal EnableDelayedExpansion
 
+cd /d "%~dp0"
+
 REM Ensure persistent console session when launched via explorer or launcher binary
 if not defined RIPCORD_INTERACTIVE (
     set "RIPCORD_INTERACTIVE=1"
@@ -9,22 +11,19 @@ if not defined RIPCORD_INTERACTIVE (
 )
 
 title Ripcord - High-Speed Stream Engine
-chcp 65001 >nul
 color 0B
 
 echo.
 echo   ===================================================================
-echo     ██████╗  ██╗ ██████╗   ██████╗  ██████╗  ██████╗  ██████╗ 
-echo     ██╔══██╗ ██║ ██╔══██╗ ██╔════╝ ██╔═══██╗ ██╔══██╗ ██╔══██╗
-echo     ██████╔╝ ██║ ██████╔╝ ██║      ██║   ██║ ██████╔╝ ██║  ██║
-echo     ██╔══██╗ ██║ ██╔═══╝  ██║      ██║   ██║ ██╔══██╗ ██║  ██║
-echo     ██║  ██║ ██║ ██║      ╚██████╗ ╚██████╔╝ ██║  ██║ ██████╔╝
-echo     ╚═╝  ╚═╝ ╚═╝ ╚═╝       ╚═════╝  ╚═════╝  ╚═╝  ╚═╝ ╚═════╝ 
-echo            ⚡ HIGH-SPEED STREAM ENGINE & MEDIA SUITE ⚡
+echo     ######   ######  ######   #####   #####   ######   #####  
+echo     ##   ##    ##    ##   ## ##   ## ##   ##  ##   ##  ##  ## 
+echo     ######     ##    ######  ##      ##   ##  ######   ##   ##
+echo     ##  ##     ##    ##      ##   ## ##   ##  ##  ##   ##  ## 
+echo     ##   ##  ######  ##       #####   #####   ##   ##  #####  
+echo.
+echo           [ HIGH-SPEED STREAM ENGINE AND MEDIA SUITE ]
 echo   ===================================================================
 echo.
-
-cd /d "%~dp0"
 
 REM Detect Node.js installation paths if missing from system PATH
 if exist "%ProgramFiles%\nodejs\node.exe" set "PATH=%ProgramFiles%\nodejs;%PATH%"
@@ -85,11 +84,11 @@ explorer "http://localhost:3000"
 
 echo.
 echo   ===================================================================
-echo     ⚡ RIPCORD IS LIVE: http://localhost:3000
-echo     • Web client launched in default browser
-echo     • High-speed concurrent fragment download engine ready
-echo     • Keep this console window open while downloading
-echo     • Press Ctrl+C to terminate the server
+echo     [+] RIPCORD IS LIVE: http://localhost:3000
+echo     - Web client launched in default browser
+echo     - High-speed concurrent fragment download engine ready
+echo     - Keep this console window open while downloading
+echo     - Press Ctrl+C to terminate the server
 echo   ===================================================================
 echo.
 
