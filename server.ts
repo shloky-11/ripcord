@@ -39,7 +39,8 @@ async function ensureYtDlp() {
     if (resp.ok && resp.body) {
       const fileStream = fs.createWriteStream(BIN_YTDLP);
       const { pipeline } = await import('stream/promises');
-      await pipeline(resp.body as any, fileStream);
+      const { Readable } = await import('stream');
+      await pipeline(Readable.fromWeb(resp.body as any), fileStream);
       if (!isWindows) fs.chmodSync(BIN_YTDLP, 0o755);
       console.log('[Ripcord] yt-dlp is installed and ready.');
     }
@@ -50,11 +51,22 @@ async function ensureYtDlp() {
 
 app.use(express.json({ limit: '10mb' }));
 
-// In-memory queue state
+// Database file paths
+const DB_FILE = path.resolve(process.cwd(), 'pulsetube-db.json');
+const SETTINGS_FILE = path.resolve(process.cwd(), 'pulsetube-settings.json');
+
+interface DatabaseStore {
+  version: number;
+  settings: EngineSettings;
+  queue: QueueItem[];
+  updatedAt: number;
+}
+
+// In-memory active process registry
 let queueItems: QueueItem[] = [];
 const activeProcesses: Map<string, ChildProcess> = new Map();
 
-// Settings
+// Default Settings
 let settings: EngineSettings = {
   maxConcurrent: 3,
   concurrentFragments: 8,
@@ -67,29 +79,85 @@ let settings: EngineSettings = {
   cookies: '',
 };
 
-// Load saved settings if any
-const SETTINGS_FILE = path.resolve(process.cwd(), 'pulsetube-settings.json');
-if (fs.existsSync(SETTINGS_FILE)) {
+function atomicWriteJson(filePath: string, data: any) {
+  const tmpPath = `${filePath}.${Date.now()}_${Math.random().toString(36).substring(2, 6)}.tmp`;
   try {
-    const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
-    settings = { ...settings, ...JSON.parse(raw) };
+    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tmpPath, filePath);
   } catch (err) {
-    console.error('Failed reading settings file:', err);
+    if (fs.existsSync(tmpPath)) {
+      try { fs.unlinkSync(tmpPath); } catch {}
+    }
+    // Fallback direct write
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
   }
 }
 
-function saveSettings() {
+function saveDatabase() {
   try {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+    const payload: DatabaseStore = {
+      version: 1,
+      settings,
+      queue: queueItems,
+      updatedAt: Date.now(),
+    };
+    atomicWriteJson(DB_FILE, payload);
+
     if (settings.cookies && settings.cookies.trim()) {
       fs.writeFileSync(COOKIES_FILE, settings.cookies.trim(), 'utf-8');
     } else if (fs.existsSync(COOKIES_FILE)) {
-      fs.unlinkSync(COOKIES_FILE);
+      try { fs.unlinkSync(COOKIES_FILE); } catch {}
     }
   } catch (err) {
-    console.error('Failed saving settings:', err);
+    console.error('Failed saving database:', err);
   }
 }
+
+function loadDatabase() {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      if (raw.trim()) {
+        const parsed = JSON.parse(raw) as Partial<DatabaseStore>;
+        if (parsed.settings) {
+          settings = { ...settings, ...parsed.settings };
+        }
+        if (Array.isArray(parsed.queue)) {
+          // Recover queue items, marking any interrupted in-flight jobs as 'paused'
+          queueItems = parsed.queue.map(item => {
+            if (item.status === 'downloading' || item.status === 'processing') {
+              return {
+                ...item,
+                status: 'paused',
+                speed: 'Paused (restored)',
+                speedBytesPerSec: 0,
+                eta: '--:--',
+              };
+            }
+            return item;
+          });
+        }
+        console.log(`[PulseTube DB] Restored ${queueItems.length} items from database.`);
+        return;
+      }
+    }
+
+    // Migration fallback from legacy settings file
+    if (fs.existsSync(SETTINGS_FILE)) {
+      const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
+      if (raw.trim()) {
+        settings = { ...settings, ...JSON.parse(raw) };
+        console.log('[PulseTube DB] Migrated legacy settings into database.');
+      }
+    }
+    saveDatabase();
+  } catch (err) {
+    console.error('Error loading database, initializing safe state:', err);
+    saveDatabase();
+  }
+}
+
+loadDatabase();
 
 // Helpers
 function extractVideoId(url: string): string | null {
@@ -309,6 +377,7 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
       item.totalBytes = stats.size;
       item.transferredBytes = stats.size;
       item.completedAt = Date.now();
+      saveDatabase();
       processQueue();
     } else if (hasBotBlock || code !== 0) {
       // Graceful fallback to High-Speed Stream Synthesizer so user has a working, downloadable file immediately!
@@ -317,6 +386,7 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
     } else {
       item.status = 'error';
       item.error = 'Download failed or interrupted.';
+      saveDatabase();
       processQueue();
     }
   });
@@ -413,9 +483,11 @@ function executeHighSpeedSynthesizer(
           if (botProtectionEncountered) {
             item.error = 'Direct cloud stream protected by YouTube. Delivered via High-Speed Stream Engine (Paste YouTube Cookies in Settings or run locally for direct bypass).';
           }
+          saveDatabase();
         } else {
           item.status = 'error';
           item.error = 'Failed to generate output file.';
+          saveDatabase();
         }
         processQueue();
       });
@@ -424,6 +496,7 @@ function executeHighSpeedSynthesizer(
         console.error('ffmpeg error:', err);
         item.status = 'error';
         item.error = err.message || 'Media processing error';
+        saveDatabase();
         processQueue();
       });
     }
@@ -483,7 +556,7 @@ app.get('/api/settings', (_req: Request, res: Response) => {
 
 app.post('/api/settings', (req: Request, res: Response) => {
   settings = { ...settings, ...req.body };
-  saveSettings();
+  saveDatabase();
   processQueue();
   res.json(settings);
 });
@@ -530,6 +603,7 @@ app.post('/api/queue/add', async (req: Request, res: Response) => {
   };
 
   queueItems.unshift(newItem);
+  saveDatabase();
   processQueue();
   res.json({ item: newItem });
 });
@@ -568,6 +642,7 @@ app.post('/api/queue/batch-add', async (req: Request, res: Response) => {
     addedItems.push(newItem);
   }
 
+  saveDatabase();
   processQueue();
   res.json({ items: addedItems });
 });
@@ -631,6 +706,7 @@ app.post('/api/queue/sample-batch', async (_req: Request, res: Response) => {
     addedItems.push(newItem);
   }
 
+  saveDatabase();
   processQueue();
   res.json({ items: addedItems });
 });
@@ -646,6 +722,7 @@ app.post('/api/queue/pause/:id', (req: Request, res: Response) => {
     item.status = 'paused';
     item.speed = 'Paused';
     item.speedBytesPerSec = 0;
+    saveDatabase();
     processQueue();
   }
   res.json({ success: true });
@@ -656,6 +733,7 @@ app.post('/api/queue/resume/:id', (req: Request, res: Response) => {
   if (item && item.status === 'paused') {
     item.status = 'queued';
     item.speed = 'Queued';
+    saveDatabase();
     processQueue();
   }
   res.json({ success: true });
@@ -672,6 +750,7 @@ app.post('/api/queue/cancel/:id', (req: Request, res: Response) => {
     item.status = 'cancelled';
     item.speed = 'Cancelled';
     item.speedBytesPerSec = 0;
+    saveDatabase();
     processQueue();
   }
   res.json({ success: true });
@@ -684,6 +763,7 @@ app.post('/api/queue/retry/:id', (req: Request, res: Response) => {
     item.progress = 0;
     item.error = undefined;
     item.speed = 'Queued';
+    saveDatabase();
     processQueue();
   }
   res.json({ success: true });
@@ -701,6 +781,7 @@ app.post('/api/queue/delete/:id', (req: Request, res: Response) => {
       try { fs.unlinkSync(item.filePath); } catch {}
     }
     queueItems = queueItems.filter(i => i.id !== req.params.id);
+    saveDatabase();
     processQueue();
   }
   res.json({ success: true });
@@ -719,6 +800,7 @@ app.post('/api/queue/pause-all', (_req: Request, res: Response) => {
       item.speedBytesPerSec = 0;
     }
   }
+  saveDatabase();
   res.json({ success: true });
 });
 
@@ -729,12 +811,32 @@ app.post('/api/queue/resume-all', (_req: Request, res: Response) => {
       item.speed = 'Queued';
     }
   }
+  saveDatabase();
   processQueue();
   res.json({ success: true });
 });
 
-app.post('/api/queue/clear-completed', (_req: Request, res: Response) => {
+app.post('/api/queue/clear-completed', (req: Request, res: Response) => {
+  const deleteFiles = req.query.deleteFiles === 'true' || req.body?.deleteFiles === true;
+  for (const item of queueItems) {
+    if (item.status === 'completed' || item.status === 'cancelled') {
+      if (deleteFiles && item.filePath && fs.existsSync(item.filePath)) {
+        try { fs.unlinkSync(item.filePath); } catch {}
+      }
+    }
+  }
   queueItems = queueItems.filter(i => i.status !== 'completed' && i.status !== 'cancelled');
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// Mark item as saved to local folder to prevent duplicate auto-downloads
+app.post('/api/queue/mark-saved/:id', (req: Request, res: Response) => {
+  const item = queueItems.find(i => i.id === req.params.id);
+  if (item) {
+    item.savedToLocalFolder = true;
+    saveDatabase();
+  }
   res.json({ success: true });
 });
 

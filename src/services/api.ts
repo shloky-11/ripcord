@@ -116,8 +116,12 @@ export const api = {
     await fetch(`${API_BASE}/queue/resume-all`, { method: 'POST' });
   },
 
-  async clearCompleted(): Promise<void> {
-    await fetch(`${API_BASE}/queue/clear-completed`, { method: 'POST' });
+  async clearCompleted(deleteFiles = false): Promise<void> {
+    await fetch(`${API_BASE}/queue/clear-completed?deleteFiles=${deleteFiles}`, { method: 'POST' });
+  },
+
+  async markSavedToFolder(id: string): Promise<void> {
+    await fetch(`${API_BASE}/queue/mark-saved/${id}`, { method: 'POST' });
   },
 
   getDownloadUrl(id: string): string {

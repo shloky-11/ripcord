@@ -82,7 +82,13 @@ export default function App() {
   const [previewItem, setPreviewItem] = useState<QueueItem | null>(null);
 
   // Keep track of which items have been auto-saved to avoid duplicate saves
-  const [autoSavedIds, setAutoSavedIds] = useState<Set<string>>(new Set());
+  const [autoSavedIds, setAutoSavedIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('pulsetube_saved_ids');
+      if (stored) return new Set(JSON.parse(stored));
+    } catch {}
+    return new Set();
+  });
 
   // Show temporary toast notification
   const showToast = useCallback((msg: string) => {
@@ -121,12 +127,24 @@ export default function App() {
       // Auto-save completed items to local folder if configured
       if (settings.autoSaveToFolder) {
         for (const item of data.items) {
-          if (item.status === 'completed' && !autoSavedIds.has(item.id) && item.fileName) {
-            setAutoSavedIds((prev) => new Set(prev).add(item.id));
+          if (
+            item.status === 'completed' &&
+            !item.savedToLocalFolder &&
+            !autoSavedIds.has(item.id) &&
+            item.fileName
+          ) {
+            setAutoSavedIds((prev) => {
+              const updated = new Set(prev).add(item.id);
+              try {
+                localStorage.setItem('pulsetube_saved_ids', JSON.stringify(Array.from(updated)));
+              } catch {}
+              return updated;
+            });
             const downloadUrl = api.getDownloadUrl(item.id);
             localFolderService.saveFileToFolder(item.fileName, downloadUrl)
               .then((res) => {
                 if (res.success) {
+                  api.markSavedToFolder(item.id).catch(console.error);
                   showToast(`Saved "${item.title.slice(0, 30)}..." to ${folderName}`);
                 }
               })

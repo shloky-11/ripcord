@@ -8,42 +8,63 @@ const STORE_NAME = 'handles';
 const KEY_DIR_HANDLE = 'saved_directory_handle';
 
 // Open or create IndexedDB for directory handle persistence
-function openDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
+function openDatabase(): Promise<IDBDatabase | null> {
+  return new Promise((resolve) => {
+    try {
+      if (typeof window === 'undefined' || !window.indexedDB) {
+        return resolve(null);
       }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
   });
 }
 
 // Store directory handle in IndexedDB
 async function storeHandle(handle: FileSystemDirectoryHandle): Promise<void> {
-  const db = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.put(handle, KEY_DIR_HANDLE);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+  try {
+    const db = await openDatabase();
+    if (!db) return;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.put(handle, KEY_DIR_HANDLE);
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    // Graceful no-op if blocked in iframe
+  }
 }
 
 // Retrieve stored directory handle from IndexedDB
 async function getStoredHandle(): Promise<FileSystemDirectoryHandle | null> {
   try {
     const db = await openDatabase();
+    if (!db) return null;
     return new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.get(KEY_DIR_HANDLE);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
+      try {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(KEY_DIR_HANDLE);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
     });
   } catch {
     return null;
@@ -146,14 +167,18 @@ class LocalFolderService {
         if (permStatus === 'granted') {
           const fileHandle = await this.dirHandle.getFileHandle(fileName, { create: true });
           const writable = await (fileHandle as any).createWritable();
-
-          if (typeof fileBlobOrUrl === 'string') {
-            const resp = await fetch(fileBlobOrUrl);
-            if (!resp.body) throw new Error('No stream body');
-            await resp.body.pipeTo(writable);
-          } else {
-            await writable.write(fileBlobOrUrl);
-            await writable.close();
+          try {
+            if (typeof fileBlobOrUrl === 'string') {
+              const resp = await fetch(fileBlobOrUrl);
+              if (!resp.body) throw new Error('No stream body');
+              await resp.body.pipeTo(writable);
+            } else {
+              await writable.write(fileBlobOrUrl);
+              await writable.close();
+            }
+          } catch (writeErr) {
+            try { await writable.abort(); } catch {}
+            throw writeErr;
           }
 
           return { success: true, savedPath: `${this.folderName}/${fileName}` };

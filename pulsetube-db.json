@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "settings": {
+    "maxConcurrent": 4,
+    "concurrentFragments": 8,
+    "turboMode": true,
+    "autoSaveToFolder": true,
+    "defaultFormat": "video",
+    "defaultVideoQuality": "1080p",
+    "defaultAudioQuality": "320k",
+    "defaultAudioCodec": "mp3",
+    "cookies": ""
+  },
+  "queue": [],
+  "updatedAt": 1794027574059
+}
