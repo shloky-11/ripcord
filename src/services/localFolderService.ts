@@ -3,7 +3,7 @@
  * Allows saving downloaded media files directly to the user's designated local directory.
  */
 
-const DB_NAME = 'pulsetube_fs_db';
+const DB_NAME = 'ripcord_fs_db';
 const STORE_NAME = 'handles';
 const KEY_DIR_HANDLE = 'saved_directory_handle';
 
@@ -79,7 +79,7 @@ class LocalFolderService {
   constructor() {
     this.isSupported = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
     if (typeof window !== 'undefined') {
-      const savedName = localStorage.getItem('pulsetube_folder_name');
+      const savedName = localStorage.getItem('ripcord_folder_name');
       if (savedName) this.folderName = savedName;
       this.tryRestoreHandle();
     }
@@ -109,7 +109,7 @@ class LocalFolderService {
         if (perm === 'granted') {
           this.dirHandle = handle;
           this.folderName = handle.name;
-          localStorage.setItem('pulsetube_folder_name', handle.name);
+          localStorage.setItem('ripcord_folder_name', handle.name);
           return true;
         } else {
           // Keep handle cached, user may re-verify on click
@@ -135,14 +135,14 @@ class LocalFolderService {
 
     try {
       const handle = await (window as any).showDirectoryPicker({
-        id: 'pulsetube-downloads-folder',
+        id: 'ripcord-downloads-folder',
         mode: 'readwrite',
         startIn: 'downloads',
       });
 
       this.dirHandle = handle;
       this.folderName = handle.name;
-      localStorage.setItem('pulsetube_folder_name', handle.name);
+      localStorage.setItem('ripcord_folder_name', handle.name);
       await storeHandle(handle);
 
       return { success: true, name: handle.name };

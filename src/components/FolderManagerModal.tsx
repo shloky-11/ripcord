@@ -1,5 +1,4 @@
-import React from 'react';
-import { X, FolderDown, HardDrive, Check, Sparkles, FolderOpen, ArrowRight } from 'lucide-react';
+import { X, FolderDown, HardDrive, Check, Info, FolderOpen, ArrowRight } from 'lucide-react';
 
 interface FolderManagerModalProps {
   isOpen: boolean;
@@ -79,7 +78,7 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
           {/* Direct File System Access API Info */}
           <div className="flex flex-col gap-2 text-xs text-neutral-600 dark:text-neutral-400">
             <span className="font-semibold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> How Local Folder Saving Works
+              <Info className="w-3.5 h-3.5 text-blue-500" /> How Local Folder Saving Works
             </span>
             <p>
               Ripcord uses the browser’s native <strong>File System Access API</strong> to write downloaded videos and audio files directly to the directory you choose on your computer (e.g. <code className="font-mono">~/Downloads/YouTube</code>, <code className="font-mono">D:\Media\Music</code>).

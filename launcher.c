@@ -12,7 +12,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     WCHAR cmdLine[4096];
     WCHAR packageJsonPath[MAX_PATH];
 
-    // 1. Get location of PulseTube.exe
+    // 1. Get location of Ripcord.exe
     GetModuleFileNameW(NULL, exePath, MAX_PATH);
 
     // Extract directory
@@ -28,10 +28,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (fileAttr == INVALID_FILE_ATTRIBUTES) {
         MessageBoxW(
             NULL,
-            L"PulseTube was launched from inside an unextracted ZIP archive.\n\n"
+            L"Ripcord was launched from inside an unextracted ZIP archive.\n\n"
             L"Please right-click the downloaded ZIP file, choose 'Extract All...', "
-            L"and run PulseTube.exe from the extracted folder.",
-            L"PulseTube - Setup Required",
+            L"and run Ripcord.exe from the extracted folder.",
+            L"Ripcord - Setup Required",
             MB_ICONWARNING | MB_OK
         );
         return 1;
@@ -64,8 +64,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (!success) {
         DWORD err = GetLastError();
         WCHAR errMsg[256];
-        wsprintfW(errMsg, L"Failed to launch PulseTube engine (Error Code: %lu).\n\nPlease verify run.bat exists in the same folder.", err);
-        MessageBoxW(NULL, errMsg, L"PulseTube Error", MB_ICONERROR | MB_OK);
+        wsprintfW(errMsg, L"Failed to launch Ripcord engine (Error Code: %lu).\n\nPlease verify run.bat exists in the same folder.", err);
+        MessageBoxW(NULL, errMsg, L"Ripcord Error", MB_ICONERROR | MB_OK);
         return 1;
     }
 

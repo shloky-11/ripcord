@@ -6,7 +6,6 @@ import {
   Search, 
   FolderDown, 
   FolderCheck, 
-  Sparkles, 
   Download,
   AlertCircle
 } from 'lucide-react';
@@ -28,7 +27,7 @@ export default function App() {
   // Theme state
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('pulsetube_theme') !== 'light';
+      return localStorage.getItem('ripcord_theme') !== 'light';
     }
     return true;
   });
@@ -84,7 +83,7 @@ export default function App() {
   // Keep track of which items have been auto-saved to avoid duplicate saves
   const [autoSavedIds, setAutoSavedIds] = useState<Set<string>>(() => {
     try {
-      const stored = localStorage.getItem('pulsetube_saved_ids');
+      const stored = localStorage.getItem('ripcord_saved_ids');
       if (stored) return new Set(JSON.parse(stored));
     } catch {}
     return new Set();
@@ -102,10 +101,10 @@ export default function App() {
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
-      localStorage.setItem('pulsetube_theme', 'dark');
+      localStorage.setItem('ripcord_theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
-      localStorage.setItem('pulsetube_theme', 'light');
+      localStorage.setItem('ripcord_theme', 'light');
     }
   }, [darkMode]);
 
@@ -136,7 +135,7 @@ export default function App() {
             setAutoSavedIds((prev) => {
               const updated = new Set(prev).add(item.id);
               try {
-                localStorage.setItem('pulsetube_saved_ids', JSON.stringify(Array.from(updated)));
+                localStorage.setItem('ripcord_saved_ids', JSON.stringify(Array.from(updated)));
               } catch {}
               return updated;
             });
@@ -511,7 +510,7 @@ export default function App() {
                     onClick={handleAddSampleBatch}
                     className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-100 transition-colors cursor-pointer shadow-xs"
                   >
-                    <Sparkles className="w-3.5 h-3.5" />
+                    <Play className="w-3.5 h-3.5 fill-current" />
                     <span>Run Quick Test Batch (3 Streams)</span>
                   </button>
 

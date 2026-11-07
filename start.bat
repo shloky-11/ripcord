@@ -1,13 +1,13 @@
 @echo off
-:: Force the command prompt window to STAY OPEN under cmd /k so it NEVER closes or flashes
+:: Force the command prompt window to stay open
 if not defined RIPCORD_INTERACTIVE (
     set "RIPCORD_INTERACTIVE=1"
     cmd /k ""%~f0" %*"
     exit /b
 )
 
-title Ripcord - High-Speed Stream Ripper
-color 0A
+title Ripcord - Media Downloader
+color 0B
 
 echo ===================================================
 echo             Launching Ripcord in 1-Click
@@ -30,17 +30,12 @@ if exist "%APPDATA%\npm" (
     set "PATH=%APPDATA%\npm;%PATH%"
 )
 
-:: 1. Check if package.json exists (verifies folder is extracted from ZIP)
+:: 1. Check if package.json exists
 if not exist "package.json" (
     color 0C
     echo [ERROR] package.json was not found in this folder.
     echo.
-    echo It looks like you ran this file directly from inside a ZIP file.
-    echo.
-    echo HOW TO FIX:
-    echo  1. Right-click the downloaded zip archive
-    echo  2. Click "Extract All..." and extract to a normal folder
-    echo  3. Open that extracted folder and double-click start.bat (or run.bat)
+    echo Please make sure you extracted the ZIP archive completely.
     echo.
     echo Press any key to exit...
     pause >nul
@@ -55,15 +50,11 @@ if errorlevel 1 (
     echo  ERROR: Node.js was not detected on your computer!
     echo ===================================================
     echo.
-    echo Ripcord needs Node.js (version 18 or newer) to run locally.
-    echo.
-    echo Opening https://nodejs.org/en/download/ in your browser...
+    echo Ripcord requires Node.js (version 18 or newer).
+    echo Opening https://nodejs.org/ in your browser...
     explorer "https://nodejs.org/en/download/"
     echo.
-    echo Once you install Node.js, run this file again!
-    echo.
-    echo (NOTE: You can also use Ripcord directly online in your browser
-    echo  without installing Node.js - see README.md or open.html)
+    echo Once installed, run Ripcord.exe or start.bat again!
     echo.
     echo Press any key to exit...
     pause >nul
@@ -76,7 +67,7 @@ echo.
 
 :: 3. Check / Install dependencies
 if not exist "node_modules\" (
-    echo [2/3] Installing dependencies (first run only, please wait 1-2 minutes)...
+    echo [2/3] Installing dependencies (first run only, please wait)...
     call npm install
     if errorlevel 1 (
         color 0C
@@ -91,15 +82,14 @@ if not exist "node_modules\" (
 )
 echo.
 
-:: 4. Launch browser using explorer.exe (prevents 'start' command recursion bug on Windows)
+:: 4. Launch browser using explorer.exe
 echo [3/3] Opening Ripcord at http://localhost:3000...
 explorer "http://localhost:3000"
 
 echo.
 echo ===================================================
 echo  Ripcord is now RUNNING at http://localhost:3000
-echo  Keep this black window open while using Ripcord!
-echo  To stop the server, press Ctrl+C or close this window.
+echo  Press Ctrl+C or close this window to stop.
 echo ===================================================
 echo.
 
@@ -111,6 +101,6 @@ if errorlevel 1 (
 )
 
 echo.
-echo Ripcord server stopped.
+echo Server stopped.
 echo Press any key to close this window...
 pause >nul

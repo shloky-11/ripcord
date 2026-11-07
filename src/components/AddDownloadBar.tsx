@@ -4,7 +4,7 @@ import {
   Video, 
   Music, 
   Clipboard, 
-  Sparkles, 
+  Play, 
   ListPlus, 
   Loader2 
 } from 'lucide-react';
@@ -222,7 +222,7 @@ export const AddDownloadBar: React.FC<AddDownloadBarProps> = ({
               {isAddingSample ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <Sparkles className="w-3.5 h-3.5" />
+                <Play className="w-3.5 h-3.5 fill-current" />
               )}
               <span>Quick Test Batch</span>
             </button>

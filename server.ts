@@ -52,8 +52,8 @@ async function ensureYtDlp() {
 app.use(express.json({ limit: '10mb' }));
 
 // Database file paths
-const DB_FILE = path.resolve(process.cwd(), 'pulsetube-db.json');
-const SETTINGS_FILE = path.resolve(process.cwd(), 'pulsetube-settings.json');
+const DB_FILE = path.resolve(process.cwd(), 'ripcord-db.json');
+const SETTINGS_FILE = path.resolve(process.cwd(), 'ripcord-settings.json');
 
 interface DatabaseStore {
   version: number;
@@ -115,8 +115,14 @@ function saveDatabase() {
 
 function loadDatabase() {
   try {
-    if (fs.existsSync(DB_FILE)) {
-      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+    const targetDb = fs.existsSync(DB_FILE) 
+      ? DB_FILE 
+      : fs.existsSync(path.resolve(process.cwd(), 'pulsetube-db.json'))
+      ? path.resolve(process.cwd(), 'pulsetube-db.json')
+      : null;
+
+    if (targetDb) {
+      const raw = fs.readFileSync(targetDb, 'utf-8');
       if (raw.trim()) {
         const parsed = JSON.parse(raw) as Partial<DatabaseStore>;
         if (parsed.settings) {
@@ -137,7 +143,8 @@ function loadDatabase() {
             return item;
           });
         }
-        console.log(`[PulseTube DB] Restored ${queueItems.length} items from database.`);
+        console.log(`[Ripcord DB] Restored ${queueItems.length} items from database.`);
+        saveDatabase();
         return;
       }
     }
@@ -147,7 +154,7 @@ function loadDatabase() {
       const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
       if (raw.trim()) {
         settings = { ...settings, ...JSON.parse(raw) };
-        console.log('[PulseTube DB] Migrated legacy settings into database.');
+        console.log('[Ripcord DB] Migrated legacy settings into database.');
       }
     }
     saveDatabase();
@@ -896,18 +903,24 @@ app.get('/api/download/stream/:id', (req: Request, res: Response) => {
 });
 
 // Download native Windows .exe launcher
-app.get('/api/download/pulsetube.exe', (_req: Request, res: Response) => {
-  const exePath = path.resolve(process.cwd(), 'PulseTube.exe');
+const serveExe = (_req: Request, res: Response) => {
+  const primaryExe = path.resolve(process.cwd(), 'Ripcord.exe');
+  const fallbackExe = path.resolve(process.cwd(), 'PulseTube.exe');
+  const exePath = fs.existsSync(primaryExe) ? primaryExe : fallbackExe;
+
   if (fs.existsSync(exePath)) {
     const stat = fs.statSync(exePath);
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Content-Type', 'application/vnd.microsoft.portable-executable');
-    res.setHeader('Content-Disposition', 'attachment; filename="PulseTube.exe"');
+    res.setHeader('Content-Disposition', 'attachment; filename="Ripcord.exe"');
     fs.createReadStream(exePath).pipe(res);
   } else {
-    res.status(404).json({ message: 'PulseTube.exe not yet built' });
+    res.status(404).json({ message: 'Ripcord.exe not yet built' });
   }
-});
+};
+
+app.get('/api/download/ripcord.exe', serveExe);
+app.get('/api/download/pulsetube.exe', serveExe);
 
 // Dev vs Prod Vite mounting
 async function startServer() {

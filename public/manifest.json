@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Ripcord - High-Speed Stream Ripper",
+  "name": "Ripcord - Fast Video & Audio Downloader",
   "short_name": "Ripcord",
-  "description": "High-speed stream ripper and local media queue for video and audio downloads directly to local folders.",
+  "description": "High-speed video and audio downloader for saving media directly to local storage.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

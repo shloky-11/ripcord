@@ -40,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-sm sticky top-0 z-30 transition-colors">
       {/* Zone 1: Brand Wordmark */}
-      <a href="/" title="PulseTube Home" className="flex items-center gap-3 shrink-0 group no-underline">
+      <a href="/" title="Ripcord Home" className="flex items-center gap-3 shrink-0 group no-underline">
         <div className="w-8 h-8 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
           <svg className="w-4 h-4 fill-none stroke-current stroke-[2.5]" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
@@ -48,7 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
         <div className="flex flex-col">
           <span className="text-base font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 whitespace-nowrap">
-            PulseTube
+            Ripcord
           </span>
           <span className="text-[11px] text-neutral-500 dark:text-neutral-400 font-normal leading-none">
             High-Speed Video & Audio Downloader
@@ -87,17 +87,6 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Zone 3: Primary Actions & Toggles */}
       <div className="flex items-center gap-2 shrink-0">
-        {/* Direct Windows .exe download button */}
-        <a
-          href="/api/download/pulsetube.exe"
-          download="PulseTube.exe"
-          title="Download native PulseTube.exe for Windows"
-          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer shadow-xs whitespace-nowrap"
-        >
-          <DownloadCloud className="w-3.5 h-3.5" />
-          <span>PulseTube.exe</span>
-        </a>
-
         {isInstallable && !isInstalled && (
           <button
             onClick={install}

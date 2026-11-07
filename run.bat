@@ -1,16 +1,16 @@
 @echo off
 :: Force the command prompt window to STAY OPEN under cmd /k so it NEVER closes or flashes
-if not defined PULSETUBE_INTERACTIVE (
-    set "PULSETUBE_INTERACTIVE=1"
+if not defined RIPCORD_INTERACTIVE (
+    set "RIPCORD_INTERACTIVE=1"
     cmd /k ""%~f0" %*"
     exit /b
 )
 
-title PulseTube - Windows 11 Desktop Workstation
+title Ripcord - Media Downloader
 color 0B
 
 echo ===================================================
-echo        Launching PulseTube Windows 11 Workstation
+echo             Launching Ripcord
 echo ===================================================
 echo.
 
@@ -40,7 +40,7 @@ if not exist "package.json" (
     echo HOW TO FIX:
     echo  1. Right-click the downloaded zip archive
     echo  2. Click "Extract All..." and extract to a normal folder
-    echo  3. Open that extracted folder and double-click run.bat
+    echo  3. Open that extracted folder and double-click Ripcord.exe (or run.bat)
     echo.
     echo Press any key to exit...
     pause >nul
@@ -55,12 +55,12 @@ if errorlevel 1 (
     echo  ERROR: Node.js was not detected on your computer!
     echo ===================================================
     echo.
-    echo PulseTube needs Node.js (version 18 or newer) to run locally.
+    echo Ripcord needs Node.js (version 18 or newer) to run locally.
     echo.
     echo Opening https://nodejs.org/en/download/ in your browser...
     explorer "https://nodejs.org/en/download/"
     echo.
-    echo Once you install Node.js, run run.bat again!
+    echo Once you install Node.js, run Ripcord.exe again!
     echo.
     echo Press any key to exit...
     pause >nul
@@ -89,13 +89,13 @@ if not exist "node_modules\" (
 echo.
 
 :: 4. Launch browser using explorer.exe
-echo [3/3] Opening PulseTube at http://localhost:3000...
+echo [3/3] Opening Ripcord at http://localhost:3000...
 explorer "http://localhost:3000"
 
 echo.
 echo ===================================================
-echo  PulseTube is now RUNNING at http://localhost:3000
-echo  Keep this console window open while using PulseTube!
+echo  Ripcord is now RUNNING at http://localhost:3000
+echo  Keep this console window open while using Ripcord!
 echo  To stop the server, press Ctrl+C or close this window.
 echo ===================================================
 echo.
@@ -104,10 +104,10 @@ call npm run dev
 if errorlevel 1 (
     color 0C
     echo.
-    echo [ERROR] PulseTube stopped unexpectedly (code %errorlevel%).
+    echo [ERROR] Ripcord stopped unexpectedly (code %errorlevel%).
 )
 
 echo.
-echo PulseTube server stopped.
+echo Ripcord server stopped.
 echo Press any key to close this window...
 pause >nul

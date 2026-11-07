@@ -128,17 +128,17 @@
 </head>
 <body>
   <div class="card">
-    <span class="badge">Ripcord Launcher</span>
+    <span class="badge">Ripcord</span>
     <h1>Launch Ripcord</h1>
     <p class="subtitle">Choose how you want to open and use Ripcord on your system:</p>
 
     <div class="options">
       <!-- Option A: Check local server -->
       <div class="option-box">
-        <div class="option-title">💻 Option 1: Run on Your Local Computer</div>
-        <p class="option-desc">If your local server is running, you can connect directly:</p>
+        <div class="option-title">Option 1: Run on Your Local Computer</div>
+        <p class="option-desc">If your local server is running, connect directly:</p>
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-          <a href="http://localhost:3000" id="localLink" class="btn btn-primary" target="_blank">Open Local Ripcord (localhost:3000)</a>
+          <a href="http://localhost:3000" id="localLink" class="btn btn-primary" target="_blank">Open Ripcord (localhost:3000)</a>
           <button class="btn btn-secondary" onclick="checkLocalServer()">Check Server Status</button>
         </div>
         <div id="statusBox" class="status-pill">
@@ -149,12 +149,12 @@
 
       <!-- Option B: Local Setup Instructions -->
       <div class="option-box">
-        <div class="option-title">⚙️ Having trouble opening start.bat?</div>
-        <p class="option-desc">If the black command window flashes and closes, follow these 3 quick checks:</p>
+        <div class="option-title">Option 2: Standalone Windows Program</div>
+        <p class="option-desc">On Windows, you can also launch directly via executable:</p>
         <ol class="step-list">
-          <li><strong>Extract the folder first:</strong> Make sure you right-clicked the downloaded ZIP file and chose <em>"Extract All..."</em>. Running inside the zip will fail.</li>
-          <li><strong>Install Node.js:</strong> Ensure Node.js (v18+) is installed from <a href="https://nodejs.org" target="_blank" style="color: #60a5fa;">nodejs.org</a>.</li>
-          <li><strong>Run alternative launcher:</strong> Double-click <code style="background:#111; padding:2px 6px; border-radius:4px;">run.bat</code> or right-click <code style="background:#111; padding:2px 6px; border-radius:4px;">run.ps1</code> and choose <em>"Run with PowerShell"</em>.</li>
+          <li><strong>Windows .exe:</strong> Double-click <code style="background:#111; padding:2px 6px; border-radius:4px;">Ripcord.exe</code> in this folder.</li>
+          <li><strong>Node.js:</strong> Ensure Node.js (v18+) is installed from <a href="https://nodejs.org" target="_blank" style="color: #60a5fa;">nodejs.org</a>.</li>
+          <li><strong>Alternative script:</strong> Double-click <code style="background:#111; padding:2px 6px; border-radius:4px;">run.bat</code> or <code style="background:#111; padding:2px 6px; border-radius:4px;">start.bat</code>.</li>
         </ol>
       </div>
     </div>
@@ -170,7 +170,7 @@
         const res = await fetch('http://localhost:3000/api/info', { method: 'GET', mode: 'cors' });
         if (res.ok) {
           dot.classList.add('active');
-          text.innerText = 'Local Ripcord server is RUNNING!';
+          text.innerText = 'Local Ripcord server is running';
           link.classList.remove('btn-primary');
           link.classList.add('btn-success');
         } else {
@@ -178,7 +178,7 @@
         }
       } catch (e) {
         dot.classList.remove('active');
-        text.innerText = 'Local server not running yet. Run run.bat or start.bat first.';
+        text.innerText = 'Local server not running yet. Run Ripcord.exe or run.bat first.';
       }
     }
     checkLocalServer();
