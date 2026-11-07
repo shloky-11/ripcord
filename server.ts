@@ -946,7 +946,31 @@ async function startServer() {
   ensureYtDlp().catch(console.error);
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Ripcord Server running on http://0.0.0.0:${PORT}`);
+    const C = {
+      cyan: '\x1b[36m',
+      brightCyan: '\x1b[96m',
+      magenta: '\x1b[95m',
+      green: '\x1b[32m',
+      yellow: '\x1b[33m',
+      bold: '\x1b[1m',
+      dim: '\x1b[2m',
+      reset: '\x1b[0m',
+    };
+
+    console.log(`
+${C.brightCyan}  ██████╗  ██╗ ██████╗   ██████╗  ██████╗  ██████╗  ██████╗ 
+  ██╔══██╗ ██║ ██╔══██╗ ██╔════╝ ██╔═══██╗ ██╔══██╗ ██╔══██╗
+  ██████╔╝ ██║ ██████╔╝ ██║      ██║   ██║ ██████╔╝ ██║  ██║
+  ██╔══██╗ ██║ ██╔═══╝  ██║      ██║   ██║ ██╔══██╗ ██║  ██║
+  ██║  ██║ ██║ ██║      ╚██████╗ ╚██████╔╝ ██║  ██║ ██████╔╝
+  ╚═╝  ╚═╝ ╚═╝ ╚═╝       ╚═════╝  ╚═════╝  ╚═╝  ╚═╝ ╚═════╝ ${C.reset}
+  ${C.magenta}${C.bold}⚡ HIGH-SPEED STREAM ENGINE & CONCURRENT MEDIA SUITE ⚡${C.reset}
+
+  ${C.bold}${C.green}● Local Web UI:${C.reset}    ${C.brightCyan}http://localhost:${PORT}${C.reset}
+  ${C.bold}${C.cyan}● Network Listen:${C.reset}  http://0.0.0.0:${PORT}
+  ${C.bold}${C.yellow}● Storage Vault:${C.reset}   ${DOWNLOADS_DIR}
+  ${C.dim}------------------------------------------------------------${C.reset}
+`);
   });
 }
 

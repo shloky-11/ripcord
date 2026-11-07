@@ -1,7 +1,15 @@
 # PowerShell 1-Click Launcher for Windows
-Write-Host "===================================================" -ForegroundColor Cyan
-Write-Host "             Launching Ripcord" -ForegroundColor Cyan
-Write-Host "===================================================" -ForegroundColor Cyan
+$host.UI.RawUI.WindowTitle = "Ripcord - High-Speed Stream Engine"
+Write-Host ""
+Write-Host "  ===================================================================" -ForegroundColor Cyan
+Write-Host "    ██████╗  ██╗ ██████╗   ██████╗  ██████╗  ██████╗  ██████╗ " -ForegroundColor Cyan
+Write-Host "    ██╔══██╗ ██║ ██╔══██╗ ██╔════╝ ██╔═══██╗ ██╔══██╗ ██╔══██╗" -ForegroundColor Cyan
+Write-Host "    ██████╔╝ ██║ ██████╔╝ ██║      ██║   ██║ ██████╔╝ ██║  ██║" -ForegroundColor Cyan
+Write-Host "    ██╔══██╗ ██║ ██╔═══╝  ██║      ██║   ██║ ██╔══██╗ ██║  ██║" -ForegroundColor Cyan
+Write-Host "    ██║  ██║ ██║ ██║      ╚██████╗ ╚██████╔╝ ██║  ██║ ██████╔╝" -ForegroundColor Cyan
+Write-Host "    ╚═╝  ╚═╝ ╚═╝ ╚═╝       ╚═════╝  ╚═════╝  ╚═╝  ╚═╝ ╚═════╝ " -ForegroundColor Cyan
+Write-Host "           ⚡ HIGH-SPEED STREAM ENGINE & MEDIA SUITE ⚡        " -ForegroundColor Yellow
+Write-Host "  ===================================================================" -ForegroundColor Cyan
 Write-Host ""
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

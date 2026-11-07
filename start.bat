@@ -8,12 +8,20 @@ if not defined RIPCORD_INTERACTIVE (
     exit /b
 )
 
-title Ripcord
+title Ripcord - High-Speed Stream Engine
+chcp 65001 >nul
 color 0B
 
-echo ===================================================
-echo                     Ripcord
-echo ===================================================
+echo.
+echo   ===================================================================
+echo     ██████╗  ██╗ ██████╗   ██████╗  ██████╗  ██████╗  ██████╗ 
+echo     ██╔══██╗ ██║ ██╔══██╗ ██╔════╝ ██╔═══██╗ ██╔══██╗ ██╔══██╗
+echo     ██████╔╝ ██║ ██████╔╝ ██║      ██║   ██║ ██████╔╝ ██║  ██║
+echo     ██╔══██╗ ██║ ██╔═══╝  ██║      ██║   ██║ ██╔══██╗ ██║  ██║
+echo     ██║  ██║ ██║ ██║      ╚██████╗ ╚██████╔╝ ██║  ██║ ██████╔╝
+echo     ╚═╝  ╚═╝ ╚═╝ ╚═╝       ╚═════╝  ╚═════╝  ╚═╝  ╚═╝ ╚═════╝ 
+echo            ⚡ HIGH-SPEED STREAM ENGINE & MEDIA SUITE ⚡
+echo   ===================================================================
 echo.
 
 cd /d "%~dp0"
@@ -76,11 +84,13 @@ echo [3/3] Opening client at http://localhost:3000...
 explorer "http://localhost:3000"
 
 echo.
-echo ===================================================
-echo  Ripcord server is active at http://localhost:3000
-echo  Keep this console window open while using Ripcord.
-echo  Press Ctrl+C to stop.
-echo ===================================================
+echo   ===================================================================
+echo     ⚡ RIPCORD IS LIVE: http://localhost:3000
+echo     • Web client launched in default browser
+echo     • High-speed concurrent fragment download engine ready
+echo     • Keep this console window open while downloading
+echo     • Press Ctrl+C to terminate the server
+echo   ===================================================================
 echo.
 
 call npm run dev
