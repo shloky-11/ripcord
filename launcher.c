@@ -12,33 +12,29 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     WCHAR cmdLine[4096];
     WCHAR packageJsonPath[MAX_PATH];
 
-    // 1. Get location of Ripcord.exe
+    // Resolve binary path and working directory
     GetModuleFileNameW(NULL, exePath, MAX_PATH);
-
-    // Extract directory
     wcscpy_s(dirPath, MAX_PATH, exePath);
     WCHAR *lastSlash = wcsrchr(dirPath, L'\\');
     if (lastSlash) {
         *lastSlash = L'\0';
     }
 
-    // 2. Check if package.json exists in this folder (ensure user extracted ZIP archive)
+    // Guard against running directly inside an unextracted zip virtual container
     wsprintfW(packageJsonPath, L"%s\\package.json", dirPath);
     DWORD fileAttr = GetFileAttributesW(packageJsonPath);
     if (fileAttr == INVALID_FILE_ATTRIBUTES) {
         MessageBoxW(
             NULL,
-            L"Ripcord was launched from inside an unextracted ZIP archive.\n\n"
-            L"Please right-click the downloaded ZIP file, choose 'Extract All...', "
-            L"and run Ripcord.exe from the extracted folder.",
-            L"Ripcord - Setup Required",
+            L"Ripcord cannot run from within a compressed archive.\n\n"
+            L"Extract the entire folder before launching Ripcord.exe.",
+            L"Ripcord - Archive Extraction Required",
             MB_ICONWARNING | MB_OK
         );
         return 1;
     }
 
-    // 3. Build command line to execute run.bat
-    // This handles Node.js auto-detection, dependencies, and starting the local server
+    // Forward invocation to run.bat to handle node environment validation and startup
     wsprintfW(cmdLine, L"cmd.exe /c \"\"%s\\run.bat\"\"", dirPath);
 
     STARTUPINFOW si;
@@ -47,7 +43,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
 
-    // Launch run.bat in normal console window so user can see startup & progress
     BOOL success = CreateProcessW(
         NULL,
         cmdLine,
@@ -64,14 +59,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (!success) {
         DWORD err = GetLastError();
         WCHAR errMsg[256];
-        wsprintfW(errMsg, L"Failed to launch Ripcord engine (Error Code: %lu).\n\nPlease verify run.bat exists in the same folder.", err);
-        MessageBoxW(NULL, errMsg, L"Ripcord Error", MB_ICONERROR | MB_OK);
+        wsprintfW(errMsg, L"Failed to spawn background process (error code %lu).\nVerify run.bat is present in the working directory.", err);
+        MessageBoxW(NULL, errMsg, L"Ripcord - Launch Error", MB_ICONERROR | MB_OK);
         return 1;
     }
 
-    // Close process handles
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
-
     return 0;
 }

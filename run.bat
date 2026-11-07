@@ -1,22 +1,22 @@
 @echo off
-:: Force the command prompt window to STAY OPEN under cmd /k so it NEVER closes or flashes
+:: Ensure persistent console session when launched via explorer or secondary process
 if not defined RIPCORD_INTERACTIVE (
     set "RIPCORD_INTERACTIVE=1"
     cmd /k ""%~f0" %*"
     exit /b
 )
 
-title Ripcord - Media Downloader
+title Ripcord
 color 0B
 
 echo ===================================================
-echo             Launching Ripcord
+echo                     Ripcord
 echo ===================================================
 echo.
 
 cd /d "%~dp0"
 
-:: Auto-detect standard Node.js directories in case Windows PATH is not updated yet
+:: Append common local Node.js install paths if omitted from system PATH
 if exist "%ProgramFiles%\nodejs\node.exe" (
     set "PATH=%ProgramFiles%\nodejs;%PATH%"
 )
@@ -30,84 +30,62 @@ if exist "%APPDATA%\npm" (
     set "PATH=%APPDATA%\npm;%PATH%"
 )
 
-:: 1. Check if package.json exists (verifies folder is extracted from ZIP)
+:: Verify workspace directory integrity
 if not exist "package.json" (
     color 0C
-    echo [ERROR] package.json was not found in this folder.
+    echo [ERROR] package.json not found in working directory (%cd%).
+    echo Ensure the application folder has been extracted from any zip archive.
     echo.
-    echo It looks like you ran this file directly from inside a ZIP file.
-    echo.
-    echo HOW TO FIX:
-    echo  1. Right-click the downloaded zip archive
-    echo  2. Click "Extract All..." and extract to a normal folder
-    echo  3. Open that extracted folder and double-click Ripcord.exe (or run.bat)
-    echo.
-    echo Press any key to exit...
-    pause >nul
+    pause
     exit /b 1
 )
 
-:: 2. Check if Node.js is installed
+:: Validate Node.js runtime availability
 node -v >nul 2>&1
 if errorlevel 1 (
     color 0C
-    echo ===================================================
-    echo  ERROR: Node.js was not detected on your computer!
-    echo ===================================================
-    echo.
-    echo Ripcord needs Node.js (version 18 or newer) to run locally.
-    echo.
-    echo Opening https://nodejs.org/en/download/ in your browser...
+    echo [ERROR] Node.js runtime (v18+) is required to host the local service.
+    echo Navigating to https://nodejs.org/en/download/
     explorer "https://nodejs.org/en/download/"
     echo.
-    echo Once you install Node.js, run Ripcord.exe again!
-    echo.
-    echo Press any key to exit...
-    pause >nul
+    pause
     exit /b 1
 )
 
-echo [1/3] Node.js detected:
+echo [1/3] Node runtime:
 node -v
 echo.
 
-:: 3. Check / Install dependencies
+:: Ensure project dependencies are installed
 if not exist "node_modules\" (
-    echo [2/3] Installing dependencies (first run only, please wait 1-2 minutes)...
+    echo [2/3] Installing dependencies...
     call npm install
     if errorlevel 1 (
         color 0C
-        echo.
-        echo [ERROR] npm install encountered an error. Please check your internet connection.
-        echo Press any key to exit...
-        pause >nul
+        echo [ERROR] Dependency installation failed.
+        pause
         exit /b 1
     )
 ) else (
-    echo [2/3] Dependencies ready.
+    echo [2/3] Dependencies verified.
 )
 echo.
 
-:: 4. Launch browser using explorer.exe
-echo [3/3] Opening Ripcord at http://localhost:3000...
+:: Launch default web client
+echo [3/3] Opening client at http://localhost:3000...
 explorer "http://localhost:3000"
 
 echo.
 echo ===================================================
-echo  Ripcord is now RUNNING at http://localhost:3000
-echo  Keep this console window open while using Ripcord!
-echo  To stop the server, press Ctrl+C or close this window.
+echo  Service active at http://localhost:3000
+echo  Press Ctrl+C to stop.
 echo ===================================================
 echo.
 
 call npm run dev
 if errorlevel 1 (
     color 0C
-    echo.
-    echo [ERROR] Ripcord stopped unexpectedly (code %errorlevel%).
+    echo [ERROR] Server exited with code %errorlevel%.
 )
 
-echo.
-echo Ripcord server stopped.
-echo Press any key to close this window...
-pause >nul
+pause

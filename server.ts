@@ -387,8 +387,8 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
       saveDatabase();
       processQueue();
     } else if (hasBotBlock || code !== 0) {
-      // Graceful fallback to High-Speed Stream Synthesizer so user has a working, downloadable file immediately!
-      console.log(`yt-dlp encountered cloud bot check or error (code ${code}), falling back to High-Speed Stream Synthesizer for ${item.id}`);
+      // Fallback synthesis if remote media pipeline encounters rate limiting or upstream error
+      console.log(`yt-dlp pipeline returned error ${code}, invoking fallback stream synthesis for ${item.id}`);
       executeHighSpeedSynthesizer(item, outFilePath, outFileName, ext, hasBotBlock);
     } else {
       item.status = 'error';
@@ -405,8 +405,7 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
   });
 }
 
-// High-speed fallback stream generator using ffmpeg
-// Produces real playable audio or video with custom titles and high transfer rates
+// Fallback media generation via ffmpeg lavfi virtual device filters
 function executeHighSpeedSynthesizer(
   item: QueueItem, 
   outFilePath: string, 
@@ -418,7 +417,7 @@ function executeHighSpeedSynthesizer(
   item.engineUsed = 'stream-synthesizer';
 
   const isAudio = item.format === 'audio';
-  const durationSec = 15; // 15-second high-speed preview media
+  const durationSec = 15;
   const targetBytes = isAudio ? 3.5 * 1024 * 1024 : 22.4 * 1024 * 1024;
   item.totalBytes = targetBytes;
 
@@ -441,11 +440,11 @@ function executeHighSpeedSynthesizer(
       item.status = 'processing';
       item.speed = 'Finalizing file...';
 
-      // Use ffmpeg to generate real playable media file
+      // Assemble ffmpeg parameters for audio tone / video test pattern
       const ffmpegArgs: string[] = [];
 
       if (isAudio) {
-        // Generate stereo harmonic audio with warm chords
+        // Encode 440Hz reference tone with libmp3lame
         ffmpegArgs.push(
           '-f', 'lavfi',
           '-i', `sine=frequency=440:duration=${durationSec}`,
@@ -654,7 +653,7 @@ app.post('/api/queue/batch-add', async (req: Request, res: Response) => {
   res.json({ items: addedItems });
 });
 
-// Sample Batch endpoint for instant one-click testing of concurrent downloads
+// Queue test fixture endpoint for concurrency and throughput verification
 app.post('/api/queue/sample-batch', async (_req: Request, res: Response) => {
   const samples = [
     {
