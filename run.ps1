@@ -35,6 +35,10 @@ if (-not (Test-Path "node_modules")) {
     Write-Host "[2/3] Installing dependencies (first run only, please wait)..." -ForegroundColor Yellow
     & npm install
     if ($LASTEXITCODE -ne 0) {
+        Write-Host "[INFO] Retrying with --legacy-peer-deps..." -ForegroundColor Yellow
+        & npm install --legacy-peer-deps
+    }
+    if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] npm install failed. Please check your internet connection." -ForegroundColor Red
         Read-Host "Press Enter to exit..."
         exit 1

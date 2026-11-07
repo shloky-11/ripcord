@@ -56,9 +56,14 @@ if exist "node_modules\" goto :deps_ready
 echo [2/3] Installing dependencies...
 call npm install
 if errorlevel 1 (
+    echo [INFO] Retrying with --legacy-peer-deps...
+    call npm install --legacy-peer-deps
+)
+if errorlevel 1 (
     color 0C
     echo.
     echo [ERROR] npm install encountered an error.
+    echo Try running: npm install --legacy-peer-deps manually.
     pause
     exit /b 1
 )

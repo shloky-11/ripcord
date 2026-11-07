@@ -25,7 +25,7 @@ echo "[1/3] Node.js detected: $(node -v)"
 
 if [ ! -d "node_modules" ]; then
     echo "[2/3] Installing dependencies (first run only, please wait)..."
-    npm install
+    npm install || npm install --legacy-peer-deps
     if [ $? -ne 0 ]; then
         echo "[ERROR] npm install failed. Please check your internet connection."
         read -p "Press Enter to exit..."
