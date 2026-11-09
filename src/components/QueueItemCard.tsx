@@ -38,7 +38,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
-export const QueueItemCard: React.FC<QueueItemCardProps> = ({
+const QueueItemCardComponent: React.FC<QueueItemCardProps> = ({
   item,
   onPause,
   onResume,
@@ -325,3 +325,19 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
     </div>
   );
 };
+
+export const QueueItemCard = React.memo(QueueItemCardComponent, (prev, next) => {
+  return (
+    prev.folderName === next.folderName &&
+    prev.item.id === next.item.id &&
+    prev.item.status === next.item.status &&
+    prev.item.progress === next.item.progress &&
+    prev.item.speed === next.item.speed &&
+    prev.item.eta === next.item.eta &&
+    prev.item.transferredBytes === next.item.transferredBytes &&
+    prev.item.totalBytes === next.item.totalBytes &&
+    prev.item.fileSize === next.item.fileSize &&
+    prev.item.savedToLocalFolder === next.item.savedToLocalFolder &&
+    prev.item.error === next.item.error
+  );
+});

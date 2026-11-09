@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   Play, 
   Pause, 
@@ -116,40 +116,92 @@ export default function App() {
     setHasSelectedFolder(localFolderService.hasSelectedDirectory());
   }, []);
 
+  // Version-aware queue state tracking to prevent unnecessary re-renders
+  const lastQueueVersionRef = useRef<number | undefined>(undefined);
+
   // Poll queue and stats
   const fetchQueueState = useCallback(async () => {
     try {
-      const data = await api.getQueue();
-      setItems(data.items);
-      setStats(data.stats);
+      const data = await api.getQueue(lastQueueVersionRef.current);
+      if (data.unchanged) {
+        return; // Backend confirmed queue has not changed; skip re-rendering
+      }
+      if (data.version !== undefined) {
+        lastQueueVersionRef.current = data.version;
+      }
 
-      // Auto-save completed items to local folder if configured
-      if (settings.autoSaveToFolder) {
-        for (const item of data.items) {
-          if (
-            item.status === 'completed' &&
-            !item.savedToLocalFolder &&
-            !autoSavedIds.has(item.id) &&
-            item.fileName
-          ) {
-            setAutoSavedIds((prev) => {
-              const updated = new Set(prev).add(item.id);
-              try {
-                localStorage.setItem('ripcord_saved_ids', JSON.stringify(Array.from(updated)));
-              } catch {}
-              return updated;
-            });
-            const downloadUrl = api.getDownloadUrl(item.id);
-            localFolderService.saveFileToFolder(item.fileName, downloadUrl)
-              .then((res) => {
-                if (res.success) {
-                  api.markSavedToFolder(item.id).catch(console.error);
-                  showToast(`Saved "${item.title.slice(0, 30)}..." to ${folderName}`);
-                }
-              })
-              .catch(console.error);
+      if (data.items) {
+        setItems((prevItems) => {
+          if (prevItems.length === data.items!.length) {
+            let hasChanged = false;
+            for (let i = 0; i < prevItems.length; i++) {
+              const p = prevItems[i];
+              const n = data.items![i];
+              if (
+                p.id !== n.id ||
+                p.status !== n.status ||
+                p.progress !== n.progress ||
+                p.speed !== n.speed ||
+                p.eta !== n.eta ||
+                p.fileSize !== n.fileSize ||
+                p.savedToLocalFolder !== n.savedToLocalFolder ||
+                p.error !== n.error
+              ) {
+                hasChanged = true;
+                break;
+              }
+            }
+            if (!hasChanged) return prevItems; // Preserves reference -> zero re-render
+          }
+          return data.items!;
+        });
+
+        // Auto-save completed items to local folder if configured
+        if (settings.autoSaveToFolder) {
+          for (const item of data.items) {
+            if (
+              item.status === 'completed' &&
+              !item.savedToLocalFolder &&
+              !autoSavedIds.has(item.id) &&
+              item.fileName
+            ) {
+              setAutoSavedIds((prev) => {
+                const updated = new Set(prev).add(item.id);
+                try {
+                  localStorage.setItem('ripcord_saved_ids', JSON.stringify(Array.from(updated)));
+                } catch {}
+                return updated;
+              });
+              const downloadUrl = api.getDownloadUrl(item.id);
+              localFolderService.saveFileToFolder(item.fileName, downloadUrl)
+                .then((res) => {
+                  if (res.success) {
+                    api.markSavedToFolder(item.id).catch(console.error);
+                    showToast(`Saved "${item.title.slice(0, 30)}..." to ${folderName}`);
+                  }
+                })
+                .catch(console.error);
+            }
           }
         }
+      }
+
+      if (data.stats) {
+        setStats((prev) => {
+          if (
+            prev.activeDownloads === data.stats!.activeDownloads &&
+            prev.queuedCount === data.stats!.queuedCount &&
+            prev.completedCount === data.stats!.completedCount &&
+            prev.failedCount === data.stats!.failedCount &&
+            prev.totalSpeedBytesPerSec === data.stats!.totalSpeedBytesPerSec &&
+            prev.totalDownloadedBytes === data.stats!.totalDownloadedBytes &&
+            prev.ytDlpAvailable === data.stats!.ytDlpAvailable &&
+            prev.ffmpegAvailable === data.stats!.ffmpegAvailable
+          ) {
+            return prev; // Preserves reference -> zero re-render
+          }
+          return data.stats!;
+        });
       }
     } catch (err) {
       console.warn('Queue poll error:', err);
@@ -158,7 +210,8 @@ export default function App() {
 
   useEffect(() => {
     fetchQueueState();
-    const intervalTime = stats.activeDownloads > 0 ? 500 : 1500;
+    // 1000ms during active downloads (reduced from 500ms to eliminate thrashing), 2500ms when idle
+    const intervalTime = stats.activeDownloads > 0 ? 1000 : 2500;
     const timer = setInterval(fetchQueueState, intervalTime);
     return () => clearInterval(timer);
   }, [fetchQueueState, stats.activeDownloads]);
@@ -280,38 +333,43 @@ export default function App() {
     showToast('Engine speed and settings updated');
   };
 
-  // Filtered Queue Items
-  const filteredItems = useMemo(() => {
-    return items.filter((item) => {
-      if (activeFilter === 'downloading' && item.status !== 'downloading' && item.status !== 'processing') return false;
-      if (activeFilter === 'queued' && item.status !== 'queued') return false;
-      if (activeFilter === 'completed' && item.status !== 'completed') return false;
-      if (activeFilter === 'paused' && item.status !== 'paused') return false;
-      if (activeFilter === 'error' && item.status !== 'error') return false;
+  // Single-pass computation for tab counts and filtered queue items
+  const { tabCounts, filteredItems } = useMemo(() => {
+    const counts = { all: items.length, downloading: 0, queued: 0, completed: 0, paused: 0, error: 0 };
+    const query = searchQuery.trim().toLowerCase();
+    const result: QueueItem[] = [];
 
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchesTitle = item.title.toLowerCase().includes(query);
-        const matchesAuthor = item.author.toLowerCase().includes(query);
-        const matchesUrl = item.url.toLowerCase().includes(query);
-        return matchesTitle || matchesAuthor || matchesUrl;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const status = item.status;
+      if (status === 'downloading' || status === 'processing') counts.downloading++;
+      else if (status === 'queued') counts.queued++;
+      else if (status === 'completed') counts.completed++;
+      else if (status === 'paused') counts.paused++;
+      else if (status === 'error') counts.error++;
+
+      let matchesFilter = true;
+      if (activeFilter === 'downloading') {
+        matchesFilter = (status === 'downloading' || status === 'processing');
+      } else if (activeFilter !== 'all') {
+        matchesFilter = (status === activeFilter);
       }
 
-      return true;
-    });
-  }, [items, activeFilter, searchQuery]);
+      if (matchesFilter) {
+        if (!query) {
+          result.push(item);
+        } else {
+          const matches =
+            item.title.toLowerCase().includes(query) ||
+            item.author.toLowerCase().includes(query) ||
+            item.url.toLowerCase().includes(query);
+          if (matches) result.push(item);
+        }
+      }
+    }
 
-  // Tab counts for clean segmented control
-  const tabCounts = useMemo(() => {
-    return {
-      all: items.length,
-      downloading: items.filter((i) => i.status === 'downloading' || i.status === 'processing').length,
-      queued: items.filter((i) => i.status === 'queued').length,
-      completed: items.filter((i) => i.status === 'completed').length,
-      paused: items.filter((i) => i.status === 'paused').length,
-      error: items.filter((i) => i.status === 'error').length,
-    };
-  }, [items]);
+    return { tabCounts: counts, filteredItems: result };
+  }, [items, activeFilter, searchQuery]);
 
   return (
     <div className="min-h-screen flex flex-col bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 transition-colors">

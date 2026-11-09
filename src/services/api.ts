@@ -9,8 +9,9 @@ export const api = {
     return res.json();
   },
 
-  async getQueue(): Promise<{ items: QueueItem[]; stats: SystemStats }> {
-    const res = await fetch(`${API_BASE}/queue`);
+  async getQueue(version?: number): Promise<{ items?: QueueItem[]; stats?: SystemStats; unchanged?: boolean; version?: number }> {
+    const url = version !== undefined ? `${API_BASE}/queue?v=${version}` : `${API_BASE}/queue`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to fetch queue');
     return res.json();
   },

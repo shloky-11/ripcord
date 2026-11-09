@@ -9,8 +9,23 @@ import type { ChildProcess } from 'child_process';
 import zlib from 'zlib';
 import type { EngineSettings, QueueItem, SystemStats, VideoMetadata, MediaFormat } from './src/types/index.ts';
 
+function getPort(): number {
+  const portArgIndex = process.argv.indexOf('--port');
+  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+    const parsed = parseInt(process.argv[portArgIndex + 1], 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+  // In development in AI Studio, process.env.PORT is 8080 (container ingress proxy),
+  // while the dev server must bind to 0.0.0.0:3000.
+  if (process.env.NODE_ENV === 'production' && process.env.PORT) {
+    const parsed = parseInt(process.env.PORT, 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+  return 3000;
+}
+
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = getPort();
 const isDev = process.env.NODE_ENV !== 'production';
 
 // Ensure directories exist
@@ -24,8 +39,14 @@ const BIN_YTDLP = path.resolve(process.cwd(), 'bin', isWindows ? 'yt-dlp.exe' : 
 const BIN_FFMPEG = path.resolve(process.cwd(), 'bin', isWindows ? 'ffmpeg.exe' : 'ffmpeg');
 const COOKIES_FILE = path.resolve(process.cwd(), 'cookies.txt');
 
-// Locate ffmpeg binary dynamically across Windows, macOS, and Linux
-function findFfmpeg(): string | null {
+// Cached ffmpeg path to eliminate repeated synchronous execSync calls on request paths
+let cachedFfmpegPath: string | null | undefined = undefined;
+
+function invalidateFfmpegCache(): void {
+  cachedFfmpegPath = undefined;
+}
+
+function discoverFfmpeg(): string | null {
   if (fs.existsSync(BIN_FFMPEG)) return BIN_FFMPEG;
 
   const candidates = isWindows
@@ -53,6 +74,13 @@ function findFfmpeg(): string | null {
   } catch {}
 
   return null;
+}
+
+// Locate ffmpeg binary with in-memory caching
+function findFfmpeg(): string | null {
+  if (cachedFfmpegPath !== undefined) return cachedFfmpegPath;
+  cachedFfmpegPath = discoverFfmpeg();
+  return cachedFfmpegPath;
 }
 
 async function ensureYtDlp() {
@@ -104,6 +132,7 @@ async function ensureFfmpeg() {
         fileStream
       );
       if (!isWindows) fs.chmodSync(BIN_FFMPEG, 0o755);
+      invalidateFfmpegCache();
       console.log(`[Ripcord] ffmpeg installed and ready at: ${BIN_FFMPEG}`);
     }
   } catch (err) {
@@ -124,9 +153,26 @@ interface DatabaseStore {
   updatedAt: number;
 }
 
-// In-memory active process registry
+// In-memory active process registry and version tracking
 let queueItems: QueueItem[] = [];
+let queueVersion = 1;
 const activeProcesses: Map<string, ChildProcess> = new Map();
+
+// Prune old completed history to cap retained memory and disk serialization
+const MAX_COMPLETED_RETAINED = 100;
+function pruneCompletedHistory() {
+  const completedCount = queueItems.filter(i => i.status === 'completed').length;
+  if (completedCount > MAX_COMPLETED_RETAINED) {
+    let keptCompleted = 0;
+    queueItems = queueItems.filter(item => {
+      if (item.status === 'completed') {
+        keptCompleted++;
+        return keptCompleted <= MAX_COMPLETED_RETAINED;
+      }
+      return true;
+    });
+  }
+}
 
 // Default Settings
 let settings: EngineSettings = {
@@ -141,21 +187,18 @@ let settings: EngineSettings = {
   cookies: '',
 };
 
-function atomicWriteJson(filePath: string, data: any) {
-  const tmpPath = `${filePath}.${Date.now()}_${Math.random().toString(36).substring(2, 6)}.tmp`;
-  try {
-    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
-    fs.renameSync(tmpPath, filePath);
-  } catch (err) {
-    if (fs.existsSync(tmpPath)) {
-      try { fs.unlinkSync(tmpPath); } catch {}
-    }
-    // Fallback direct write
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
-  }
-}
+let dbSaveTimer: NodeJS.Timeout | null = null;
+let isDbSaving = false;
+let hasPendingDbSave = false;
 
-function saveDatabase() {
+async function doSaveDatabase(): Promise<void> {
+  if (isDbSaving) {
+    hasPendingDbSave = true;
+    return;
+  }
+  isDbSaving = true;
+  hasPendingDbSave = false;
+
   try {
     const payload: DatabaseStore = {
       version: 1,
@@ -163,17 +206,64 @@ function saveDatabase() {
       queue: queueItems,
       updatedAt: Date.now(),
     };
-    atomicWriteJson(DB_FILE, payload);
+    const tmpPath = `${DB_FILE}.${Date.now()}_${Math.random().toString(36).substring(2, 6)}.tmp`;
+    const serialized = JSON.stringify(payload, null, 2);
+    await fs.promises.writeFile(tmpPath, serialized, 'utf-8');
+    await fs.promises.rename(tmpPath, DB_FILE);
 
     if (settings.cookies && settings.cookies.trim()) {
-      fs.writeFileSync(COOKIES_FILE, settings.cookies.trim(), 'utf-8');
-    } else if (fs.existsSync(COOKIES_FILE)) {
-      try { fs.unlinkSync(COOKIES_FILE); } catch {}
+      await fs.promises.writeFile(COOKIES_FILE, settings.cookies.trim(), 'utf-8');
+    } else {
+      try {
+        await fs.promises.unlink(COOKIES_FILE);
+      } catch (err: any) {
+        if (err.code !== 'ENOENT') console.warn('Failed removing cookies file:', err);
+      }
     }
   } catch (err) {
-    console.error('Failed saving database:', err);
+    console.error('Failed saving database asynchronously:', err);
+  } finally {
+    isDbSaving = false;
+    if (hasPendingDbSave) {
+      hasPendingDbSave = false;
+      setImmediate(() => { doSaveDatabase().catch(console.error); });
+    }
   }
 }
+
+// Debounced, non-blocking async save to prevent disk I/O from blocking event loop
+function saveDatabase(immediate = false) {
+  if (immediate) {
+    if (dbSaveTimer) {
+      clearTimeout(dbSaveTimer);
+      dbSaveTimer = null;
+    }
+    doSaveDatabase().catch(console.error);
+    return;
+  }
+
+  if (dbSaveTimer) return;
+  dbSaveTimer = setTimeout(() => {
+    dbSaveTimer = null;
+    doSaveDatabase().catch(console.error);
+  }, 60);
+}
+
+// Emergency synchronous save on process termination
+function emergencySyncSave() {
+  try {
+    const payload: DatabaseStore = {
+      version: 1,
+      settings,
+      queue: queueItems,
+      updatedAt: Date.now(),
+    };
+    fs.writeFileSync(DB_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+  } catch {}
+}
+
+process.once('SIGINT', () => { emergencySyncSave(); process.exit(0); });
+process.once('SIGTERM', () => { emergencySyncSave(); process.exit(0); });
 
 function loadDatabase() {
   try {
@@ -264,14 +354,16 @@ function formatDuration(seconds: number): string {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
-// Fetch metadata using YouTube oEmbed + scraping fallback
+// Fetch metadata using YouTube oEmbed with timeout + scraping fallback
 async function fetchYouTubeMetadata(url: string): Promise<VideoMetadata> {
   const videoId = extractVideoId(url);
-  const fallbackId = videoId || `custom_${Date.now()}`;
+  const fallbackId = videoId || `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   
   try {
     const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
-    const res = await fetch(oembedUrl);
+    const res = await fetch(oembedUrl, {
+      signal: AbortSignal.timeout(5000), // 5s timeout to prevent hanging requests
+    });
     if (res.ok) {
       const data = await res.json() as any;
       return {
@@ -285,7 +377,7 @@ async function fetchYouTubeMetadata(url: string): Promise<VideoMetadata> {
       };
     }
   } catch (err) {
-    console.warn('oEmbed fetch failed:', err);
+    // Timeout or network error - fall through cleanly to fallback metadata
   }
 
   // Generic fallback metadata
@@ -299,19 +391,54 @@ async function fetchYouTubeMetadata(url: string): Promise<VideoMetadata> {
   };
 }
 
-// Concurrency Processor: checks queue and triggers downloading
-function processQueue() {
-  const activeCount = queueItems.filter(i => i.status === 'downloading' || i.status === 'processing').length;
-  const availableSlots = settings.maxConcurrent - activeCount;
+// Bounded concurrent executor for batch requests
+async function mapConcurrent<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
 
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex++;
+      results[currentIndex] = await fn(items[currentIndex], currentIndex);
+    }
+  }
+
+  const workerCount = Math.min(limit, items.length);
+  const workers = Array.from({ length: workerCount }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
+// Single-pass Concurrency Processor: checks queue and triggers downloading
+function processQueue() {
+  const max = settings.maxConcurrent;
+  let activeCount = 0;
+  const queuedItemsToStart: QueueItem[] = [];
+
+  for (let i = 0; i < queueItems.length; i++) {
+    const status = queueItems[i].status;
+    if (status === 'downloading' || status === 'processing') {
+      activeCount++;
+    }
+  }
+
+  const availableSlots = max - activeCount;
   if (availableSlots <= 0) return;
 
-  const nextItems = queueItems
-    .filter(i => i.status === 'queued')
-    .slice(0, availableSlots);
+  for (let i = 0; i < queueItems.length; i++) {
+    const item = queueItems[i];
+    if (item.status === 'queued') {
+      queuedItemsToStart.push(item);
+      if (queuedItemsToStart.length >= availableSlots) break;
+    }
+  }
 
-  for (const item of nextItems) {
-    startDownload(item);
+  for (let i = 0; i < queuedItemsToStart.length; i++) {
+    startDownload(queuedItemsToStart[i]);
   }
 }
 
@@ -346,11 +473,11 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
   // Output template
   args.push('-o', path.join(DOWNLOADS_DIR, `${item.id}_%(title).50B.%(ext)s`));
 
-  // Concurrency & speed args
-  const fragments = settings.turboMode ? Math.max(settings.concurrentFragments, 8) : settings.concurrentFragments;
-  args.push('--concurrent-fragments', fragments.toString());
-  args.push('--buffer-size', '16M');
-  args.push('--http-chunk-size', '10M');
+  // Balanced concurrency & buffer args to prevent resource exhaustion
+  const maxFragments = settings.turboMode ? Math.min(Math.max(settings.concurrentFragments, 1), 4) : 2;
+  args.push('--concurrent-fragments', maxFragments.toString());
+  args.push('--buffer-size', settings.turboMode ? '4M' : '2M');
+  args.push('--http-chunk-size', settings.turboMode ? '4M' : '2M');
   args.push('--retries', '5');
   args.push('--fragment-retries', '5');
   args.push('--no-mtime');
@@ -404,12 +531,12 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
   activeProcesses.set(item.id, proc);
 
   let hasBotBlock = false;
-  let stdoutData = '';
+  let lineRemainder = '';
 
   proc.stdout.on('data', (chunk) => {
-    const text = chunk.toString();
-    stdoutData += text;
+    const text = lineRemainder + chunk.toString();
     const lines = text.split('\n');
+    lineRemainder = lines.pop() || '';
 
     for (const line of lines) {
       if (line.includes('|')) {
@@ -429,6 +556,7 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
             const totalBytes = parseFloat(parts[3]);
             if (!isNaN(totalBytes)) item.totalBytes = totalBytes;
           }
+          queueVersion++;
         }
       }
     }
@@ -462,6 +590,8 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
       item.totalBytes = stats.size;
       item.transferredBytes = stats.size;
       item.completedAt = Date.now();
+      pruneCompletedHistory();
+      queueVersion++;
       saveDatabase();
       processQueue();
     } else if (hasBotBlock || code !== 0) {
@@ -471,6 +601,7 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
     } else {
       item.status = 'error';
       item.error = 'Download failed or interrupted.';
+      queueVersion++;
       saveDatabase();
       processQueue();
     }
@@ -550,10 +681,13 @@ function finalizeCompletedItem(
     if (botProtectionEncountered) {
       item.error = 'Direct cloud stream protected by YouTube. Delivered via High-Speed Stream Engine (Paste YouTube Cookies in Settings or run locally for direct bypass).';
     }
+    pruneCompletedHistory();
+    queueVersion++;
     saveDatabase();
   } else {
     item.status = 'error';
     item.error = 'Failed to generate output file.';
+    queueVersion++;
     saveDatabase();
   }
   processQueue();
@@ -571,11 +705,11 @@ function executeHighSpeedSynthesizer(
   item.engineUsed = 'stream-synthesizer';
 
   const isAudio = item.format === 'audio';
-  const durationSec = 15;
-  const targetBytes = isAudio ? 3.5 * 1024 * 1024 : 22.4 * 1024 * 1024;
+  const durationSec = 4; // Lightweight 4s test media to minimize CPU footprint
+  const targetBytes = isAudio ? 1 * 1024 * 1024 : 4 * 1024 * 1024;
   item.totalBytes = targetBytes;
 
-  const totalSteps = 20;
+  const totalSteps = 12;
   let currentStep = 0;
   const speedMbps = settings.turboMode ? 28.5 : 16.2;
 
@@ -586,8 +720,9 @@ function executeHighSpeedSynthesizer(
     item.transferredBytes = Math.round((progress / 100) * targetBytes);
     item.speed = `${(speedMbps + (Math.random() * 4 - 2)).toFixed(1)} MB/s`;
     item.speedBytesPerSec = Math.round(speedMbps * 1024 * 1024);
-    const remainingSec = Math.max(Math.round((totalSteps - currentStep) * 0.4), 1);
+    const remainingSec = Math.max(Math.round((totalSteps - currentStep) * 0.25), 1);
     item.eta = `00:${remainingSec < 10 ? '0' : ''}${remainingSec}`;
+    queueVersion++;
 
     if (currentStep >= totalSteps) {
       clearInterval(interval);
@@ -597,7 +732,7 @@ function executeHighSpeedSynthesizer(
       const ffmpegPath = findFfmpeg();
 
       if (ffmpegPath) {
-        // Assemble ffmpeg parameters for audio tone / video test pattern
+        // Lightweight ffmpeg generation: 640x360@15fps test pattern or lightweight sine tone
         const ffmpegArgs: string[] = [];
 
         if (isAudio) {
@@ -605,21 +740,23 @@ function executeHighSpeedSynthesizer(
             '-f', 'lavfi',
             '-i', `sine=frequency=440:duration=${durationSec}`,
             '-c:a', 'libmp3lame',
-            '-b:a', '320k',
+            '-b:a', '128k',
             '-y',
             outFilePath
           );
         } else {
           ffmpegArgs.push(
             '-f', 'lavfi',
-            '-i', `testsrc=size=1920x1080:rate=30:duration=${durationSec}`,
+            '-i', `testsrc=size=640x360:rate=15:duration=${durationSec}`,
             '-f', 'lavfi',
             '-i', `sine=frequency=440:duration=${durationSec}`,
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
+            '-tune', 'fastdecode',
+            '-crf', '30',
             '-pix_fmt', 'yuv420p',
             '-c:a', 'aac',
-            '-b:a', '192k',
+            '-b:a', '128k',
             '-y',
             outFilePath
           );
@@ -627,7 +764,7 @@ function executeHighSpeedSynthesizer(
 
         const ffmpegProc = spawn(ffmpegPath, ffmpegArgs);
 
-        ffmpegProc.on('close', (fCode) => {
+        ffmpegProc.on('close', (_fCode) => {
           finalizeCompletedItem(item, outFilePath, outFileName, botProtectionEncountered);
         });
 
@@ -642,23 +779,35 @@ function executeHighSpeedSynthesizer(
         finalizeCompletedItem(item, outFilePath, outFileName, botProtectionEncountered);
       }
     }
-  }, 350);
+  }, 250);
 }
 
-// Compute aggregate system stats
+// Single-pass computation for aggregate system stats
 function getSystemStats(): SystemStats {
-  const activeDownloads = queueItems.filter(i => i.status === 'downloading' || i.status === 'processing').length;
-  const queuedCount = queueItems.filter(i => i.status === 'queued').length;
-  const completedCount = queueItems.filter(i => i.status === 'completed').length;
-  const failedCount = queueItems.filter(i => i.status === 'error').length;
+  let activeDownloads = 0;
+  let queuedCount = 0;
+  let completedCount = 0;
+  let failedCount = 0;
+  let totalSpeedBytesPerSec = 0;
+  let totalDownloadedBytes = 0;
 
-  const totalSpeedBytesPerSec = queueItems
-    .filter(i => i.status === 'downloading')
-    .reduce((acc, curr) => acc + (curr.speedBytesPerSec || 0), 0);
-
-  const totalDownloadedBytes = queueItems
-    .filter(i => i.status === 'completed')
-    .reduce((acc, curr) => acc + (curr.fileSize || 0), 0);
+  for (let i = 0; i < queueItems.length; i++) {
+    const item = queueItems[i];
+    const status = item.status;
+    if (status === 'downloading' || status === 'processing') {
+      activeDownloads++;
+      if (status === 'downloading') {
+        totalSpeedBytesPerSec += item.speedBytesPerSec || 0;
+      }
+    } else if (status === 'queued') {
+      queuedCount++;
+    } else if (status === 'completed') {
+      completedCount++;
+      totalDownloadedBytes += item.fileSize || 0;
+    } else if (status === 'error') {
+      failedCount++;
+    }
+  }
 
   return {
     activeDownloads,
@@ -685,8 +834,18 @@ app.get('/api/info', (_req: Request, res: Response) => {
   });
 });
 
-app.get('/api/queue', (_req: Request, res: Response) => {
+app.get('/api/queue', (req: Request, res: Response) => {
+  const clientVersion = req.query.v ? parseInt(req.query.v as string, 10) : undefined;
+  if (clientVersion !== undefined && clientVersion === queueVersion) {
+    return res.json({
+      unchanged: true,
+      version: queueVersion,
+    });
+  }
+
   res.json({
+    unchanged: false,
+    version: queueVersion,
     items: queueItems,
     stats: getSystemStats(),
   });
@@ -745,6 +904,7 @@ app.post('/api/queue/add', async (req: Request, res: Response) => {
   };
 
   queueItems.unshift(newItem);
+  queueVersion++;
   saveDatabase();
   processQueue();
   res.json({ item: newItem });
@@ -756,13 +916,22 @@ app.post('/api/queue/batch-add', async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Items array is required' });
   }
 
+  const validItems = items.filter(it => it && typeof it.url === 'string' && it.url.trim());
+  if (validItems.length === 0) {
+    return res.status(400).json({ message: 'No valid URLs provided in batch' });
+  }
+
+  // Bounded parallel metadata resolution (up to 5 concurrent requests) with timeouts
+  const metas = await mapConcurrent(validItems, 5, item => fetchYouTubeMetadata(item.url.trim()));
+
+  const now = Date.now();
   const addedItems: QueueItem[] = [];
 
-  for (const item of items) {
-    if (!item.url || typeof item.url !== 'string') continue;
-    const meta = await fetchYouTubeMetadata(item.url.trim());
+  for (let i = 0; i < validItems.length; i++) {
+    const item = validItems[i];
+    const meta = metas[i];
     const newItem: QueueItem = {
-      id: `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `job_${now}_${i}_${Math.random().toString(36).substring(2, 7)}`,
       url: item.url.trim(),
       title: meta.title,
       author: meta.author,
@@ -778,11 +947,14 @@ app.post('/api/queue/batch-add', async (req: Request, res: Response) => {
       transferredBytes: 0,
       totalBytes: 0,
       eta: '--:--',
-      createdAt: Date.now(),
+      createdAt: now,
     };
-    queueItems.unshift(newItem);
     addedItems.push(newItem);
   }
+
+  // Single prepend operation instead of repeated O(N) array shifts
+  queueItems = [...addedItems, ...queueItems];
+  queueVersion++;
 
   saveDatabase();
   processQueue();
@@ -823,30 +995,30 @@ app.post('/api/queue/sample-batch', async (_req: Request, res: Response) => {
     },
   ];
 
-  const addedItems: QueueItem[] = [];
-  for (const s of samples) {
-    const newItem: QueueItem = {
-      id: `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      url: s.url,
-      title: s.title,
-      author: s.author,
-      thumbnail: s.thumbnail,
-      duration: s.duration,
-      format: s.format,
-      quality: s.quality as any,
-      audioCodec: (s.audioCodec as any) || 'mp3',
-      status: 'queued',
-      progress: 0,
-      speed: 'Queued',
-      speedBytesPerSec: 0,
-      transferredBytes: 0,
-      totalBytes: 0,
-      eta: '--:--',
-      createdAt: Date.now(),
-    };
-    queueItems.unshift(newItem);
-    addedItems.push(newItem);
-  }
+  const now = Date.now();
+  const addedItems: QueueItem[] = samples.map((s, idx) => ({
+    id: `job_${now}_${idx}_${Math.random().toString(36).substring(2, 7)}`,
+    url: s.url,
+    title: s.title,
+    author: s.author,
+    thumbnail: s.thumbnail,
+    duration: s.duration,
+    format: s.format,
+    quality: s.quality as any,
+    audioCodec: (s.audioCodec as any) || 'mp3',
+    status: 'queued',
+    progress: 0,
+    speed: 'Queued',
+    speedBytesPerSec: 0,
+    transferredBytes: 0,
+    totalBytes: 0,
+    eta: '--:--',
+    createdAt: now,
+  }));
+
+  // Single prepend operation
+  queueItems = [...addedItems, ...queueItems];
+  queueVersion++;
 
   saveDatabase();
   processQueue();
@@ -864,6 +1036,7 @@ app.post('/api/queue/pause/:id', (req: Request, res: Response) => {
     item.status = 'paused';
     item.speed = 'Paused';
     item.speedBytesPerSec = 0;
+    queueVersion++;
     saveDatabase();
     processQueue();
   }
@@ -875,6 +1048,7 @@ app.post('/api/queue/resume/:id', (req: Request, res: Response) => {
   if (item && item.status === 'paused') {
     item.status = 'queued';
     item.speed = 'Queued';
+    queueVersion++;
     saveDatabase();
     processQueue();
   }
@@ -892,6 +1066,7 @@ app.post('/api/queue/cancel/:id', (req: Request, res: Response) => {
     item.status = 'cancelled';
     item.speed = 'Cancelled';
     item.speedBytesPerSec = 0;
+    queueVersion++;
     saveDatabase();
     processQueue();
   }
@@ -905,6 +1080,7 @@ app.post('/api/queue/retry/:id', (req: Request, res: Response) => {
     item.progress = 0;
     item.error = undefined;
     item.speed = 'Queued';
+    queueVersion++;
     saveDatabase();
     processQueue();
   }
@@ -919,10 +1095,11 @@ app.post('/api/queue/delete/:id', (req: Request, res: Response) => {
       proc.kill();
       activeProcesses.delete(item.id);
     }
-    if (item.filePath && fs.existsSync(item.filePath)) {
-      try { fs.unlinkSync(item.filePath); } catch {}
+    if (item.filePath) {
+      fs.promises.unlink(item.filePath).catch(() => {});
     }
     queueItems = queueItems.filter(i => i.id !== req.params.id);
+    queueVersion++;
     saveDatabase();
     processQueue();
   }
@@ -942,6 +1119,7 @@ app.post('/api/queue/pause-all', (_req: Request, res: Response) => {
       item.speedBytesPerSec = 0;
     }
   }
+  queueVersion++;
   saveDatabase();
   res.json({ success: true });
 });
@@ -953,6 +1131,7 @@ app.post('/api/queue/resume-all', (_req: Request, res: Response) => {
       item.speed = 'Queued';
     }
   }
+  queueVersion++;
   saveDatabase();
   processQueue();
   res.json({ success: true });
@@ -962,12 +1141,13 @@ app.post('/api/queue/clear-completed', (req: Request, res: Response) => {
   const deleteFiles = req.query.deleteFiles === 'true' || req.body?.deleteFiles === true;
   for (const item of queueItems) {
     if (item.status === 'completed' || item.status === 'cancelled') {
-      if (deleteFiles && item.filePath && fs.existsSync(item.filePath)) {
-        try { fs.unlinkSync(item.filePath); } catch {}
+      if (deleteFiles && item.filePath) {
+        fs.promises.unlink(item.filePath).catch(() => {});
       }
     }
   }
   queueItems = queueItems.filter(i => i.status !== 'completed' && i.status !== 'cancelled');
+  queueVersion++;
   saveDatabase();
   res.json({ success: true });
 });
@@ -977,6 +1157,7 @@ app.post('/api/queue/mark-saved/:id', (req: Request, res: Response) => {
   const item = queueItems.find(i => i.id === req.params.id);
   if (item) {
     item.savedToLocalFolder = true;
+    queueVersion++;
     saveDatabase();
   }
   res.json({ success: true });
@@ -1065,9 +1246,7 @@ async function startServer() {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: {
-          server: httpServer,
-        },
+        hmr: false,
       },
       appType: 'spa',
     });
