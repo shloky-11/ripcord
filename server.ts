@@ -83,6 +83,9 @@ function findFfmpeg(): string | null {
   return cachedFfmpegPath;
 }
 
+// Warm cache immediately at startup
+findFfmpeg();
+
 async function ensureYtDlp() {
   if (fs.existsSync(BIN_YTDLP)) return;
   const binDir = path.dirname(BIN_YTDLP);
@@ -132,7 +135,7 @@ async function ensureFfmpeg() {
         fileStream
       );
       if (!isWindows) fs.chmodSync(BIN_FFMPEG, 0o755);
-      invalidateFfmpegCache();
+      cachedFfmpegPath = BIN_FFMPEG; // Directly update cache with installed binary path
       console.log(`[Ripcord] ffmpeg installed and ready at: ${BIN_FFMPEG}`);
     }
   } catch (err) {
@@ -174,10 +177,15 @@ function pruneCompletedHistory() {
   }
 }
 
+function bumpQueueVersion(immediate = false) {
+  queueVersion++;
+  broadcastQueueUpdate(immediate);
+}
+
 // Default Settings
 let settings: EngineSettings = {
   maxConcurrent: 3,
-  concurrentFragments: 8,
+  concurrentFragments: 2,
   turboMode: true,
   autoSaveToFolder: true,
   defaultFormat: 'video',
@@ -556,7 +564,7 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
             const totalBytes = parseFloat(parts[3]);
             if (!isNaN(totalBytes)) item.totalBytes = totalBytes;
           }
-          queueVersion++;
+          bumpQueueVersion();
         }
       }
     }
@@ -591,7 +599,7 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
       item.transferredBytes = stats.size;
       item.completedAt = Date.now();
       pruneCompletedHistory();
-      queueVersion++;
+      bumpQueueVersion();
       saveDatabase();
       processQueue();
     } else if (hasBotBlock || code !== 0) {
@@ -601,7 +609,7 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
     } else {
       item.status = 'error';
       item.error = 'Download failed or interrupted.';
-      queueVersion++;
+      bumpQueueVersion();
       saveDatabase();
       processQueue();
     }
@@ -682,12 +690,12 @@ function finalizeCompletedItem(
       item.error = 'Direct cloud stream protected by YouTube. Delivered via High-Speed Stream Engine (Paste YouTube Cookies in Settings or run locally for direct bypass).';
     }
     pruneCompletedHistory();
-    queueVersion++;
+    bumpQueueVersion();
     saveDatabase();
   } else {
     item.status = 'error';
     item.error = 'Failed to generate output file.';
-    queueVersion++;
+    bumpQueueVersion();
     saveDatabase();
   }
   processQueue();
@@ -722,7 +730,7 @@ function executeHighSpeedSynthesizer(
     item.speedBytesPerSec = Math.round(speedMbps * 1024 * 1024);
     const remainingSec = Math.max(Math.round((totalSteps - currentStep) * 0.25), 1);
     item.eta = `00:${remainingSec < 10 ? '0' : ''}${remainingSec}`;
-    queueVersion++;
+    bumpQueueVersion();
 
     if (currentStep >= totalSteps) {
       clearInterval(interval);
@@ -834,6 +842,45 @@ app.get('/api/info', (_req: Request, res: Response) => {
   });
 });
 
+// Server-Sent Events (SSE) clients for zero-overhead real-time push notifications
+const sseClients = new Set<Response>();
+let sseBroadcastTimer: NodeJS.Timeout | null = null;
+
+function broadcastQueueUpdate(immediate = false) {
+  if (sseClients.size === 0) return;
+  if (immediate) {
+    if (sseBroadcastTimer) {
+      clearTimeout(sseBroadcastTimer);
+      sseBroadcastTimer = null;
+    }
+    const msg = `data: ${JSON.stringify({ version: queueVersion })}\n\n`;
+    for (const client of sseClients) {
+      try { client.write(msg); } catch { sseClients.delete(client); }
+    }
+    return;
+  }
+  if (sseBroadcastTimer) return;
+  sseBroadcastTimer = setTimeout(() => {
+    sseBroadcastTimer = null;
+    const msg = `data: ${JSON.stringify({ version: queueVersion })}\n\n`;
+    for (const client of sseClients) {
+      try { client.write(msg); } catch { sseClients.delete(client); }
+    }
+  }, 250);
+}
+
+// SSE live stream endpoint
+app.get('/api/queue/stream', (req: Request, res: Response) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+  });
+  res.write(`data: ${JSON.stringify({ version: queueVersion })}\n\n`);
+  sseClients.add(res);
+  req.on('close', () => { sseClients.delete(res); });
+});
+
 app.get('/api/queue', (req: Request, res: Response) => {
   const clientVersion = req.query.v ? parseInt(req.query.v as string, 10) : undefined;
   if (clientVersion !== undefined && clientVersion === queueVersion) {
@@ -904,7 +951,7 @@ app.post('/api/queue/add', async (req: Request, res: Response) => {
   };
 
   queueItems.unshift(newItem);
-  queueVersion++;
+  bumpQueueVersion();
   saveDatabase();
   processQueue();
   res.json({ item: newItem });
@@ -954,7 +1001,7 @@ app.post('/api/queue/batch-add', async (req: Request, res: Response) => {
 
   // Single prepend operation instead of repeated O(N) array shifts
   queueItems = [...addedItems, ...queueItems];
-  queueVersion++;
+  bumpQueueVersion();
 
   saveDatabase();
   processQueue();
@@ -1018,7 +1065,7 @@ app.post('/api/queue/sample-batch', async (_req: Request, res: Response) => {
 
   // Single prepend operation
   queueItems = [...addedItems, ...queueItems];
-  queueVersion++;
+  bumpQueueVersion();
 
   saveDatabase();
   processQueue();
@@ -1036,7 +1083,7 @@ app.post('/api/queue/pause/:id', (req: Request, res: Response) => {
     item.status = 'paused';
     item.speed = 'Paused';
     item.speedBytesPerSec = 0;
-    queueVersion++;
+    bumpQueueVersion();
     saveDatabase();
     processQueue();
   }
@@ -1048,7 +1095,7 @@ app.post('/api/queue/resume/:id', (req: Request, res: Response) => {
   if (item && item.status === 'paused') {
     item.status = 'queued';
     item.speed = 'Queued';
-    queueVersion++;
+    bumpQueueVersion();
     saveDatabase();
     processQueue();
   }
@@ -1066,7 +1113,7 @@ app.post('/api/queue/cancel/:id', (req: Request, res: Response) => {
     item.status = 'cancelled';
     item.speed = 'Cancelled';
     item.speedBytesPerSec = 0;
-    queueVersion++;
+    bumpQueueVersion();
     saveDatabase();
     processQueue();
   }
@@ -1080,7 +1127,7 @@ app.post('/api/queue/retry/:id', (req: Request, res: Response) => {
     item.progress = 0;
     item.error = undefined;
     item.speed = 'Queued';
-    queueVersion++;
+    bumpQueueVersion();
     saveDatabase();
     processQueue();
   }
@@ -1099,7 +1146,7 @@ app.post('/api/queue/delete/:id', (req: Request, res: Response) => {
       fs.promises.unlink(item.filePath).catch(() => {});
     }
     queueItems = queueItems.filter(i => i.id !== req.params.id);
-    queueVersion++;
+    bumpQueueVersion();
     saveDatabase();
     processQueue();
   }
@@ -1119,7 +1166,7 @@ app.post('/api/queue/pause-all', (_req: Request, res: Response) => {
       item.speedBytesPerSec = 0;
     }
   }
-  queueVersion++;
+  bumpQueueVersion();
   saveDatabase();
   res.json({ success: true });
 });
@@ -1131,7 +1178,7 @@ app.post('/api/queue/resume-all', (_req: Request, res: Response) => {
       item.speed = 'Queued';
     }
   }
-  queueVersion++;
+  bumpQueueVersion();
   saveDatabase();
   processQueue();
   res.json({ success: true });
@@ -1147,7 +1194,7 @@ app.post('/api/queue/clear-completed', (req: Request, res: Response) => {
     }
   }
   queueItems = queueItems.filter(i => i.status !== 'completed' && i.status !== 'cancelled');
-  queueVersion++;
+  bumpQueueVersion();
   saveDatabase();
   res.json({ success: true });
 });
@@ -1157,7 +1204,7 @@ app.post('/api/queue/mark-saved/:id', (req: Request, res: Response) => {
   const item = queueItems.find(i => i.id === req.params.id);
   if (item) {
     item.savedToLocalFolder = true;
-    queueVersion++;
+    bumpQueueVersion();
     saveDatabase();
   }
   res.json({ success: true });

@@ -7,7 +7,9 @@ import {
   FolderDown, 
   FolderCheck, 
   Download,
-  AlertCircle
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { QueueItem, SystemStats, EngineSettings, MediaFormat, VideoQuality, AudioQuality, AudioCodec } from './types';
 import { api } from './services/api';
@@ -118,9 +120,13 @@ export default function App() {
 
   // Version-aware queue state tracking to prevent unnecessary re-renders
   const lastQueueVersionRef = useRef<number | undefined>(undefined);
+  const isFetchingRef = useRef(false);
 
-  // Poll queue and stats
+  // Poll queue and stats with overlap guard
   const fetchQueueState = useCallback(async () => {
+    if (isFetchingRef.current) return; // Prevent concurrent/overlapping requests
+    isFetchingRef.current = true;
+
     try {
       const data = await api.getQueue(lastQueueVersionRef.current);
       if (data.unchanged) {
@@ -205,13 +211,35 @@ export default function App() {
       }
     } catch (err) {
       console.warn('Queue poll error:', err);
+    } finally {
+      isFetchingRef.current = false;
     }
   }, [settings.autoSaveToFolder, autoSavedIds, folderName, showToast]);
 
+  // Server-Sent Events (SSE) live push stream with automatic fallback to polling
+  useEffect(() => {
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource('/api/queue/stream');
+      es.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.version !== undefined && payload.version !== lastQueueVersionRef.current) {
+            fetchQueueState();
+          }
+        } catch {}
+      };
+    } catch {}
+
+    return () => {
+      if (es) es.close();
+    };
+  }, [fetchQueueState]);
+
+  // Non-overlapping fallback polling: 1500ms active (1-2s range), 4000ms idle (3-5s range)
   useEffect(() => {
     fetchQueueState();
-    // 1000ms during active downloads (reduced from 500ms to eliminate thrashing), 2500ms when idle
-    const intervalTime = stats.activeDownloads > 0 ? 1000 : 2500;
+    const intervalTime = stats.activeDownloads > 0 ? 1500 : 4000;
     const timer = setInterval(fetchQueueState, intervalTime);
     return () => clearInterval(timer);
   }, [fetchQueueState, stats.activeDownloads]);
@@ -370,6 +398,20 @@ export default function App() {
 
     return { tabCounts: counts, filteredItems: result };
   }, [items, activeFilter, searchQuery]);
+
+  // Pagination to cap DOM nodes and avoid rendering large lists simultaneously
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeFilter, searchQuery]);
+
+  const totalPages = Math.ceil(filteredItems.length / pageSize) || 1;
+  const paginatedItems = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, currentPage, pageSize]);
 
   return (
     <div className="min-h-screen flex flex-col bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 transition-colors">
@@ -530,7 +572,7 @@ export default function App() {
           {/* Queue List / High-Density Grid */}
           {filteredItems.length > 0 ? (
             <div className="flex flex-col gap-2.5">
-              {filteredItems.map((item) => (
+              {paginatedItems.map((item) => (
                 <QueueItemCard
                   key={item.id}
                   item={item}
@@ -544,6 +586,36 @@ export default function App() {
                   folderName={folderName}
                 />
               ))}
+
+              {/* Pagination Controls when queue exceeds page size */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-3 pb-1 px-1 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-500">
+                  <span>
+                    Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, filteredItems.length)} of {filteredItems.length} items
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                      disabled={currentPage <= 1}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors cursor-pointer"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <span>Prev</span>
+                    </button>
+                    <span className="px-2 font-mono tabular-nums text-neutral-700 dark:text-neutral-300 font-medium">
+                      {currentPage} / {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                      disabled={currentPage >= totalPages}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors cursor-pointer"
+                    >
+                      <span>Next</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             /* Clean Empty State */

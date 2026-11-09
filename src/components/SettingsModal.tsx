@@ -96,14 +96,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <input
                 type="range"
                 min="1"
-                max="8"
+                max="4"
                 step="1"
                 value={formData.maxConcurrent}
                 onChange={(e) => setFormData({ ...formData, maxConcurrent: parseInt(e.target.value, 10) })}
                 className="w-full accent-blue-600 cursor-pointer"
               />
               <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                Number of queued videos or audio files to download at the same time.
+                Number of queued videos or audio files to download simultaneously (1–4 streams).
               </span>
             </div>
 
@@ -118,12 +118,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onChange={(e) => setFormData({ ...formData, concurrentFragments: parseInt(e.target.value, 10) })}
                   className="w-full px-2.5 py-1.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-xs focus:outline-hidden"
                 >
-                  <option value={4}>4x Parallel Fragments (Balanced)</option>
-                  <option value={8}>8x Parallel Fragments (High Speed)</option>
-                  <option value={16}>16x Parallel Fragments (Maximum Throughput)</option>
+                  <option value={1}>1x Single Stream (Minimal memory & socket use)</option>
+                  <option value={2}>2x Parallel Fragments (Recommended balance)</option>
+                  <option value={4}>4x Parallel Fragments (High Throughput)</option>
                 </select>
                 <span className="text-[11px] text-neutral-500">
-                  Splits each file into multiple simultaneous chunk streams.
+                  Splits each file into chunk streams without socket exhaustion.
                 </span>
               </div>
 
