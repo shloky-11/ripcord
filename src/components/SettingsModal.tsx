@@ -9,7 +9,9 @@ import {
   HardDrive, 
   Cpu, 
   ShieldCheck, 
-  Loader2 
+  Loader2,
+  Upload,
+  Globe
 } from 'lucide-react';
 import { EngineSettings } from '../types';
 
@@ -43,6 +45,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setFormData({ ...settings });
     }
   }, [isOpen, settings]);
+
+  const handleCookieFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setFormData((prev) => ({ ...prev, cookies: text }));
+    } finally {
+      e.target.value = '';
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -155,29 +168,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           {/* Section 2: YouTube Cookies & Authentication */}
-          <div className="flex flex-col gap-2 pt-2 border-t border-neutral-200 dark:border-neutral-800">
-            <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-2.5 pt-2 border-t border-neutral-200 dark:border-neutral-800">
+            <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs font-bold text-neutral-900 dark:text-neutral-100 uppercase tracking-wider">
                 <Key className="w-3.5 h-3.5 text-emerald-500" />
                 <span>YouTube Authentication / Cookies</span>
+                {formData.cookies?.trim() && (
+                  <span className="text-[10px] font-semibold normal-case tracking-normal text-emerald-600 dark:text-emerald-400">
+                    (Configured)
+                  </span>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => setShowCookieHelp(!showCookieHelp)}
-                className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 text-xs flex items-center gap-1 cursor-pointer"
-              >
-                <HelpCircle className="w-3 h-3" />
-                <span>Why add cookies?</span>
-              </button>
+              <div className="flex items-center gap-3">
+                <label className="text-blue-600 dark:text-blue-400 hover:underline text-xs flex items-center gap-1 cursor-pointer font-medium">
+                  <Upload className="w-3 h-3" />
+                  <span>Upload .txt / .json</span>
+                  <input
+                    type="file"
+                    accept=".txt,.json,text/plain,application/json"
+                    onChange={handleCookieFileUpload}
+                    className="hidden"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowCookieHelp(!showCookieHelp)}
+                  className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 text-xs flex items-center gap-1 cursor-pointer"
+                >
+                  <HelpCircle className="w-3 h-3" />
+                  <span>How to get cookies?</span>
+                </button>
+              </div>
             </div>
 
             {showCookieHelp && (
-              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-xs text-blue-900 dark:text-blue-200 flex flex-col gap-1">
+              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-xs text-blue-900 dark:text-blue-200 flex flex-col gap-1.5">
                 <p>
-                  <strong>Notice:</strong> YouTube blocks cloud server IPs with "Sign in to confirm you're not a bot" unless you supply your YouTube session cookies.
+                  <strong>Why this is needed:</strong> YouTube blocks unauthenticated requests from cloud datacenter IPs with <em>"Sign in to confirm you're not a bot"</em>.
                 </p>
                 <p>
-                  You can export cookies from YouTube in your browser using an extension like <strong>Get cookies.txt LOCALLY</strong> (Netscape format) or <strong>Cookie-Editor</strong> (JSON export), and paste them below.
+                  <strong>Fastest fix:</strong> Install <strong>Get cookies.txt LOCALLY</strong> or <strong>Cookie-Editor</strong> in your browser, open youtube.com while signed in, export cookies, and click <strong>Upload .txt / .json</strong> above (or paste below).
                 </p>
               </div>
             )}
@@ -189,6 +219,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               placeholder="Paste Netscape cookies.txt, JSON cookie export, or raw Cookie header string here..."
               className="w-full p-2.5 font-mono text-[11px] rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
             />
+
+            <div className="flex flex-col gap-1 pt-1">
+              <label className="text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
+                <Globe className="w-3 h-3 text-neutral-500" />
+                <span>HTTP / SOCKS5 Proxy URL (Optional)</span>
+              </label>
+              <input
+                type="text"
+                value={formData.proxyUrl || ''}
+                onChange={(e) => setFormData({ ...formData, proxyUrl: e.target.value })}
+                placeholder="e.g. socks5://user:pass@host:1080 or http://host:8080"
+                className="w-full px-2.5 py-1.5 font-mono text-[11px] rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
           </div>
 
           {/* Section 3: System Diagnostics */}

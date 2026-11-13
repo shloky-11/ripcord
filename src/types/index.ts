@@ -40,6 +40,8 @@ export interface QueueItem {
   completedAt?: number;
   savedToLocalFolder?: boolean;
   engineUsed?: 'yt-dlp' | 'stream-synthesizer' | 'direct';
+  playlistId?: string;
+  playlistTitle?: string;
 }
 
 export interface EngineSettings {
@@ -52,6 +54,7 @@ export interface EngineSettings {
   defaultAudioQuality: AudioQuality;
   defaultAudioCodec: AudioCodec;
   cookies: string;
+  proxyUrl?: string;
 }
 
 export interface SystemStats {
@@ -75,4 +78,24 @@ export interface VideoMetadata {
   authorUrl?: string;
   thumbnail: string;
   duration?: string;
+}
+
+export interface PlaylistEntry {
+  id: string;
+  url: string;
+  title: string;
+  author: string;
+  thumbnail: string;
+  duration?: string;
+  index: number;
+  unavailable?: boolean;
+}
+
+export interface PlaylistMetadata {
+  id: string;
+  url: string;
+  title: string;
+  author: string;
+  itemCount: number;
+  entries: PlaylistEntry[];
 }

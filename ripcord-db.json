@@ -9,7 +9,8 @@
     "defaultVideoQuality": "1080p",
     "defaultAudioQuality": "320k",
     "defaultAudioCodec": "mp3",
-    "cookies": ""
+    "cookies": "",
+    "proxyUrl": ""
   },
   "queue": [
     {
@@ -88,5 +89,5 @@
       "savedToLocalFolder": true
     }
   ],
-  "updatedAt": 1794596002666
+  "updatedAt": 1794597410553
 }

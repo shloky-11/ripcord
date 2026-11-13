@@ -19,6 +19,7 @@ import { StatsBar } from './components/StatsBar';
 import { AddDownloadBar } from './components/AddDownloadBar';
 import { QueueItemCard } from './components/QueueItemCard';
 import { BatchModal } from './components/BatchModal';
+import { PlaylistModal } from './components/PlaylistModal';
 import { SettingsModal } from './components/SettingsModal';
 import { MediaPlayerModal } from './components/MediaPlayerModal';
 import { FolderManagerModal } from './components/FolderManagerModal';
@@ -59,6 +60,7 @@ export default function App() {
     defaultAudioQuality: '320k',
     defaultAudioCodec: 'mp3',
     cookies: '',
+    proxyUrl: '',
   });
 
   const [systemInfo, setSystemInfo] = useState({
@@ -78,6 +80,8 @@ export default function App() {
 
   // Modals state
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
+  const [playlistInitialUrl, setPlaylistInitialUrl] = useState('');
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isFolderManagerOpen, setIsFolderManagerOpen] = useState(false);
   const [previewItem, setPreviewItem] = useState<QueueItem | null>(null);
@@ -280,6 +284,35 @@ export default function App() {
     }
   };
 
+  const handleOpenPlaylistModal = useCallback((initialUrl = '') => {
+    setPlaylistInitialUrl(initialUrl);
+    setIsPlaylistModalOpen(true);
+  }, []);
+
+  const handleQueuePlaylist = async (params: {
+    playlistId?: string;
+    playlistTitle?: string;
+    items: Array<{
+      url: string;
+      title: string;
+      author?: string;
+      thumbnail?: string;
+      duration?: string;
+    }>;
+    format: MediaFormat;
+    quality: VideoQuality | AudioQuality;
+    audioCodec?: AudioCodec;
+  }) => {
+    try {
+      const res = await api.queuePlaylistItems(params);
+      showToast(`Queued ${res.items.length} tracks from "${params.playlistTitle || 'Playlist'}"`);
+      await fetchQueueState();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to queue playlist');
+      throw err;
+    }
+  };
+
   const handleAddSampleBatch = async () => {
     try {
       const res = await api.addSampleBatch();
@@ -424,6 +457,7 @@ export default function App() {
         onOpenFolderManager={() => setIsFolderManagerOpen(true)}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenBatchModal={() => setIsBatchModalOpen(true)}
+        onOpenPlaylistModal={() => handleOpenPlaylistModal()}
         settings={settings}
         onToast={showToast}
       />
@@ -437,6 +471,7 @@ export default function App() {
         <AddDownloadBar
           onAdd={handleAddDownload}
           onOpenBatchModal={() => setIsBatchModalOpen(true)}
+          onOpenPlaylistModal={handleOpenPlaylistModal}
           onAddSampleBatch={handleAddSampleBatch}
           isSubmitting={isSubmitting}
         />
@@ -671,6 +706,16 @@ export default function App() {
         isOpen={isBatchModalOpen}
         onClose={() => setIsBatchModalOpen(false)}
         onBatchAdd={handleBatchAdd}
+      />
+
+      <PlaylistModal
+        isOpen={isPlaylistModalOpen}
+        initialUrl={playlistInitialUrl}
+        onClose={() => {
+          setIsPlaylistModalOpen(false);
+          setPlaylistInitialUrl('');
+        }}
+        onQueuePlaylist={handleQueuePlaylist}
       />
 
       <SettingsModal

@@ -6,6 +6,7 @@ import {
   Clipboard, 
   Play, 
   ListPlus, 
+  ListVideo,
   Loader2 
 } from 'lucide-react';
 import { MediaFormat, VideoQuality, AudioQuality, AudioCodec } from '../types';
@@ -18,6 +19,7 @@ interface AddDownloadBarProps {
     audioCodec?: AudioCodec;
   }) => Promise<void>;
   onOpenBatchModal: () => void;
+  onOpenPlaylistModal: (initialUrl?: string) => void;
   onAddSampleBatch: () => Promise<void>;
   isSubmitting?: boolean;
 }
@@ -25,6 +27,7 @@ interface AddDownloadBarProps {
 export const AddDownloadBar: React.FC<AddDownloadBarProps> = ({
   onAdd,
   onOpenBatchModal,
+  onOpenPlaylistModal,
   onAddSampleBatch,
   isSubmitting = false,
 }) => {
@@ -48,10 +51,36 @@ export const AddDownloadBar: React.FC<AddDownloadBarProps> = ({
     }
   };
 
+  const urlInfo = React.useMemo(() => {
+    const trimmed = url.trim();
+    if (!trimmed) return { isPurePlaylist: false, hasListParam: false };
+    try {
+      const parsed = new URL(trimmed);
+      const hasList = parsed.searchParams.has('list');
+      const isPure =
+        hasList &&
+        (parsed.pathname.includes('/playlist') || !parsed.searchParams.has('v'));
+      return { isPurePlaylist: isPure, hasListParam: hasList && !isPure };
+    } catch {
+      return {
+        isPurePlaylist: /\/playlist\?.*list=/i.test(trimmed),
+        hasListParam: /[?&]list=/i.test(trimmed) && !/\/playlist\?.*list=/i.test(trimmed),
+      };
+    }
+  }, [url]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) {
-      setInputError('Please enter a YouTube link');
+      setInputError('Please enter a YouTube video or playlist link');
+      return;
+    }
+
+    if (urlInfo.isPurePlaylist) {
+      const target = url.trim();
+      setUrl('');
+      setInputError('');
+      onOpenPlaylistModal(target);
       return;
     }
 
@@ -91,7 +120,7 @@ export const AddDownloadBar: React.FC<AddDownloadBarProps> = ({
                 setUrl(e.target.value);
                 if (inputError) setInputError('');
               }}
-              placeholder="Paste YouTube link here (e.g. https://www.youtube.com/watch?v=... or youtu.be/...)"
+              placeholder="Paste YouTube video or playlist link here (e.g. youtube.com/watch?v=... or youtube.com/playlist?list=...)"
               className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all pr-10"
             />
             {/* Clipboard Paste Quick Button */}
@@ -113,12 +142,32 @@ export const AddDownloadBar: React.FC<AddDownloadBarProps> = ({
           >
             {isSubmitting ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : urlInfo.isPurePlaylist ? (
+              <ListVideo className="w-3.5 h-3.5" />
             ) : (
               <Plus className="w-3.5 h-3.5" />
             )}
-            <span>Add to Queue</span>
+            <span>{urlInfo.isPurePlaylist ? 'Load Playlist' : 'Add to Queue'}</span>
           </button>
         </div>
+
+        {urlInfo.hasListParam && (
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/60 text-xs text-blue-800 dark:text-blue-200">
+            <span>This video link also belongs to a playlist.</span>
+            <button
+              type="button"
+              onClick={() => {
+                const target = url.trim();
+                setUrl('');
+                onOpenPlaylistModal(target);
+              }}
+              className="flex items-center gap-1 font-semibold underline hover:text-blue-950 dark:hover:text-white cursor-pointer"
+            >
+              <ListVideo className="w-3.5 h-3.5" />
+              <span>Load Full Playlist Instead</span>
+            </button>
+          </div>
+        )}
 
         {inputError && (
           <p className="text-xs text-red-600 dark:text-red-400 font-medium">
@@ -202,8 +251,17 @@ export const AddDownloadBar: React.FC<AddDownloadBarProps> = ({
             )}
           </div>
 
-          {/* Quick Shortcuts: Batch Paste & Quick Test */}
+          {/* Quick Shortcuts: Playlist, Batch Paste & Quick Test */}
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenPlaylistModal()}
+              className="flex items-center gap-1 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 font-medium cursor-pointer"
+            >
+              <ListVideo className="w-3.5 h-3.5" />
+              <span>Playlist</span>
+            </button>
+            <span aria-hidden="true" className="text-neutral-300 dark:text-neutral-700">·</span>
             <button
               type="button"
               onClick={onOpenBatchModal}

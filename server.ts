@@ -7,7 +7,7 @@ import fs from 'fs';
 import { spawn, execSync } from 'child_process';
 import type { ChildProcess } from 'child_process';
 import zlib from 'zlib';
-import type { EngineSettings, QueueItem, SystemStats, VideoMetadata, MediaFormat } from './src/types/index.ts';
+import type { EngineSettings, QueueItem, SystemStats, VideoMetadata, PlaylistEntry, PlaylistMetadata, MediaFormat } from './src/types/index.ts';
 
 function getPort(): number {
   const portArgIndex = process.argv.indexOf('--port');
@@ -208,11 +208,38 @@ function convertJsonCookiesToNetscape(raw: string): string | null {
   }
 }
 
+function convertHeaderCookiesToNetscape(raw: string): string | null {
+  const cleaned = raw.trim().replace(/^cookie:\s*/i, '').replace(/[\r\n]+/g, ' ').trim();
+  if (!cleaned || !cleaned.includes('=')) return null;
+  const pairs = cleaned.split(';').map(p => p.trim()).filter(Boolean);
+  const expiry = Math.floor(Date.now() / 1000) + 86400 * 30;
+  const lines = ['# Netscape HTTP Cookie File'];
+  for (const pair of pairs) {
+    const eqIdx = pair.indexOf('=');
+    if (eqIdx <= 0) continue;
+    const name = pair.slice(0, eqIdx).trim();
+    const val = pair.slice(eqIdx + 1).trim();
+    if (!name) continue;
+    lines.push(`.youtube.com\tTRUE\t/\tTRUE\t${expiry}\t${name}\t${val}`);
+  }
+  return lines.length > 1 ? lines.join('\n') + '\n' : null;
+}
+
 function resolveNetscapeCookies(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  if (isNetscapeCookieFormat(trimmed)) return trimmed;
-  return convertJsonCookiesToNetscape(trimmed);
+  const normalized = raw.replace(/\r\n/g, '\n').trim();
+  if (!normalized) return null;
+
+  if (isNetscapeCookieFormat(normalized)) {
+    const hasHeader =
+      normalized.startsWith('# Netscape HTTP Cookie File') ||
+      normalized.startsWith('# HTTP Cookie File');
+    return (hasHeader ? normalized : `# Netscape HTTP Cookie File\n${normalized}`) + '\n';
+  }
+
+  const fromJson = convertJsonCookiesToNetscape(normalized);
+  if (fromJson) return fromJson;
+
+  return convertHeaderCookiesToNetscape(normalized);
 }
 
 function syncCookiesFileSync(rawCookies: string) {
@@ -227,7 +254,7 @@ function syncCookiesFileSync(rawCookies: string) {
 }
 
 // Prune old completed history to cap retained memory and disk serialization
-const MAX_COMPLETED_RETAINED = 100;
+const MAX_COMPLETED_RETAINED = 250;
 function pruneCompletedHistory() {
   const completedCount = queueItems.filter(i => i.status === 'completed').length;
   if (completedCount > MAX_COMPLETED_RETAINED) {
@@ -258,6 +285,7 @@ let settings: EngineSettings = {
   defaultAudioQuality: '320k',
   defaultAudioCodec: 'mp3',
   cookies: '',
+  proxyUrl: '',
 };
 
 let dbSaveTimer: NodeJS.Timeout | null = null;
@@ -465,6 +493,165 @@ async function fetchYouTubeMetadata(url: string): Promise<VideoMetadata> {
   };
 }
 
+function normalizePlaylistUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.hostname.includes('youtube.com') || parsed.hostname === 'youtu.be') {
+      const listId = parsed.searchParams.get('list');
+      if (listId) {
+        return `https://www.youtube.com/playlist?list=${encodeURIComponent(listId)}`;
+      }
+    }
+  } catch {}
+  return rawUrl;
+}
+
+async function fetchPlaylistMetadata(rawUrl: string, maxItems = 200): Promise<PlaylistMetadata> {
+  if (!fs.existsSync(BIN_YTDLP)) {
+    throw new Error('yt-dlp is not available on the server yet.');
+  }
+
+  const targetUrl = normalizePlaylistUrl(rawUrl.trim());
+  const clampedLimit = Math.min(Math.max(Number(maxItems) || 200, 1), 250);
+  const args = [
+    '--flat-playlist',
+    '--dump-single-json',
+    '--no-warnings',
+    '--ignore-errors',
+    '--playlist-end',
+    String(clampedLimit),
+  ];
+
+  if (settings.proxyUrl && settings.proxyUrl.trim()) {
+    args.push('--proxy', settings.proxyUrl.trim());
+  }
+
+  const trimmedCookies = (settings.cookies || '').trim();
+  if (trimmedCookies) {
+    const netscape = resolveNetscapeCookies(trimmedCookies);
+    if (netscape) {
+      syncCookiesFileSync(trimmedCookies);
+      if (fs.existsSync(COOKIES_FILE)) {
+        args.push('--cookies', COOKIES_FILE);
+      }
+    }
+  } else if (fs.existsSync(COOKIES_FILE)) {
+    args.push('--cookies', COOKIES_FILE);
+  }
+
+  args.push(targetUrl);
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(BIN_YTDLP, args);
+    const stdoutChunks: Buffer[] = [];
+    let stderrText = '';
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        try { proc.kill(); } catch {}
+        reject(new Error('Playlist extraction timed out. Try a smaller playlist or check the URL.'));
+      }
+    }, 30000);
+
+    proc.stdout.on('data', (chunk: Buffer) => {
+      stdoutChunks.push(chunk);
+    });
+
+    proc.stderr.on('data', (chunk: Buffer) => {
+      stderrText += chunk.toString();
+    });
+
+    proc.on('error', (err) => {
+      clearTimeout(timeout);
+      if (!settled) {
+        settled = true;
+        reject(new Error(`Failed to launch extractor: ${err.message}`));
+      }
+    });
+
+    proc.on('close', (code) => {
+      clearTimeout(timeout);
+      if (settled) return;
+      settled = true;
+
+      const stdout = Buffer.concat(stdoutChunks).toString('utf-8').trim();
+      if (!stdout) {
+        const cleanErr = stderrText.trim().split('\n').pop()?.replace(/^error:\s*/i, '') || 'Could not extract playlist metadata.';
+        return reject(new Error(cleanErr));
+      }
+
+      try {
+        const data = JSON.parse(stdout) as any;
+        const rawEntries: any[] = Array.isArray(data.entries) ? data.entries : [];
+
+        // If user passed a single video URL without a playlist, wrap or reject cleanly
+        if (rawEntries.length === 0 && data._type !== 'playlist') {
+          return reject(new Error('This URL does not appear to contain a playlist.'));
+        }
+
+        const entries: PlaylistEntry[] = [];
+        for (let i = 0; i < rawEntries.length; i++) {
+          const e = rawEntries[i];
+          if (!e) continue;
+          const entryId = String(e.id || `item_${i + 1}`);
+          const entryTitle = String(e.title || `Track ${i + 1}`);
+          const isUnavailable =
+            entryTitle === '[Private video]' ||
+            entryTitle === '[Deleted video]' ||
+            e.availability === 'private' ||
+            e.availability === 'needs_auth';
+
+          const entryUrl =
+            typeof e.url === 'string' && e.url.startsWith('http')
+              ? e.url
+              : e.ie_key === 'Youtube' || /^[a-zA-Z0-9_-]{11}$/.test(entryId)
+              ? `https://www.youtube.com/watch?v=${entryId}`
+              : targetUrl;
+
+          let thumb = '';
+          if (Array.isArray(e.thumbnails) && e.thumbnails.length > 0) {
+            thumb = e.thumbnails[e.thumbnails.length - 1]?.url || e.thumbnails[0]?.url || '';
+          } else if (typeof e.thumbnail === 'string') {
+            thumb = e.thumbnail;
+          }
+          if (!thumb && /^[a-zA-Z0-9_-]{11}$/.test(entryId)) {
+            thumb = `https://i.ytimg.com/vi/${entryId}/hqdefault.jpg`;
+          }
+
+          entries.push({
+            id: entryId,
+            url: entryUrl,
+            title: entryTitle,
+            author: String(e.uploader || e.channel || data.uploader || data.channel || 'YouTube'),
+            thumbnail: thumb,
+            duration: typeof e.duration === 'number' && e.duration > 0 ? formatDuration(e.duration) : undefined,
+            index: i + 1,
+            unavailable: isUnavailable,
+          });
+        }
+
+        if (entries.length === 0) {
+          return reject(new Error('No videos found in this playlist (it may be private or empty).'));
+        }
+
+        resolve({
+          id: String(data.id || `pl_${Date.now()}`),
+          url: targetUrl,
+          title: String(data.title || 'Untitled Playlist'),
+          author: String(data.uploader || data.channel || 'YouTube'),
+          itemCount: entries.length,
+          entries,
+        });
+      } catch (parseErr: any) {
+        console.log('[Ripcord] Playlist parse error:', parseErr?.message, 'exit code:', code);
+        reject(new Error('Failed to parse playlist response.'));
+      }
+    });
+  });
+}
+
 // Bounded concurrent executor for batch requests
 async function mapConcurrent<T, R>(
   items: T[],
@@ -568,6 +755,10 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
   args.push('--no-playlist');
   args.push('--no-warnings');
   args.push('--js-runtimes', `node:${process.execPath}`);
+
+  if (settings.proxyUrl && settings.proxyUrl.trim()) {
+    args.push('--proxy', settings.proxyUrl.trim());
+  }
 
   const ffmpegPath = findFfmpeg();
   if (ffmpegPath) {
@@ -1067,6 +1258,66 @@ app.post('/api/metadata', async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ message: err.message || 'Metadata extraction failed' });
   }
+});
+
+app.post('/api/playlist/metadata', async (req: Request, res: Response) => {
+  const { url, maxItems } = req.body;
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ message: 'Playlist URL is required' });
+  }
+
+  try {
+    const playlist = await fetchPlaylistMetadata(url.trim(), maxItems);
+    res.json(playlist);
+  } catch (err: any) {
+    res.status(400).json({ message: err.message || 'Failed to load playlist' });
+  }
+});
+
+app.post('/api/playlist/queue', (req: Request, res: Response) => {
+  const { playlistId, playlistTitle, items, format = 'video', quality = '1080p', audioCodec = 'mp3' } = req.body;
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ message: 'At least one playlist item must be selected' });
+  }
+
+  const now = Date.now();
+  const addedItems: QueueItem[] = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const entry = items[i];
+    if (!entry || typeof entry.url !== 'string' || !entry.url.trim()) continue;
+    addedItems.push({
+      id: `job_${now}_${i}_${Math.random().toString(36).substring(2, 7)}`,
+      url: entry.url.trim(),
+      title: String(entry.title || `Playlist Track ${i + 1}`),
+      author: String(entry.author || 'YouTube'),
+      thumbnail: String(entry.thumbnail || ''),
+      duration: entry.duration,
+      format: (format || settings.defaultFormat) as MediaFormat,
+      quality: quality || (format === 'audio' ? settings.defaultAudioQuality : settings.defaultVideoQuality),
+      audioCodec: audioCodec || settings.defaultAudioCodec,
+      status: 'queued',
+      progress: 0,
+      speed: 'Queued',
+      speedBytesPerSec: 0,
+      transferredBytes: 0,
+      totalBytes: 0,
+      eta: '--:--',
+      createdAt: now,
+      playlistId: playlistId ? String(playlistId) : undefined,
+      playlistTitle: playlistTitle ? String(playlistTitle) : undefined,
+    });
+  }
+
+  if (addedItems.length === 0) {
+    return res.status(400).json({ message: 'No valid playlist entries found' });
+  }
+
+  queueItems = [...addedItems, ...queueItems];
+  bumpQueueVersion();
+  saveDatabase();
+  processQueue();
+  res.json({ items: addedItems });
 });
 
 app.post('/api/queue/add', async (req: Request, res: Response) => {

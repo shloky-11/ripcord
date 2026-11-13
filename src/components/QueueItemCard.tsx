@@ -128,8 +128,16 @@ const QueueItemCardComponent: React.FC<QueueItemCardProps> = ({
               </h3>
 
               {/* Zero-pill metadata with subtle dot separators */}
-              <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+              <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 flex-wrap">
                 <span className="truncate max-w-[140px]">{item.author || 'YouTube'}</span>
+                {item.playlistTitle && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span className="truncate max-w-[160px] text-blue-600 dark:text-blue-400 font-medium" title={item.playlistTitle}>
+                      {item.playlistTitle}
+                    </span>
+                  </>
+                )}
                 <span aria-hidden="true">·</span>
                 <span className="uppercase font-mono text-[11px] font-medium text-neutral-700 dark:text-neutral-300">
                   {item.format === 'video' ? `MP4 · ${item.quality}` : `${item.audioCodec?.toUpperCase() || 'MP3'} · ${item.quality}`}

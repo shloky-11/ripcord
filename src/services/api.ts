@@ -1,4 +1,4 @@
-import { EngineSettings, QueueItem, SystemStats, VideoMetadata, MediaFormat, VideoQuality, AudioQuality, AudioCodec } from '../types';
+import { EngineSettings, QueueItem, SystemStats, VideoMetadata, PlaylistMetadata, MediaFormat, VideoQuality, AudioQuality, AudioCodec } from '../types';
 
 const API_BASE = '/api';
 
@@ -77,6 +77,45 @@ export const api = {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.message || 'Failed to batch add items');
+    }
+    return res.json();
+  },
+
+  async fetchPlaylistMetadata(url: string, maxItems = 200): Promise<PlaylistMetadata> {
+    const res = await fetch(`${API_BASE}/playlist/metadata`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, maxItems }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to load playlist');
+    }
+    return res.json();
+  },
+
+  async queuePlaylistItems(params: {
+    playlistId?: string;
+    playlistTitle?: string;
+    items: Array<{
+      url: string;
+      title: string;
+      author?: string;
+      thumbnail?: string;
+      duration?: string;
+    }>;
+    format: MediaFormat;
+    quality: VideoQuality | AudioQuality;
+    audioCodec?: AudioCodec;
+  }): Promise<{ items: QueueItem[] }> {
+    const res = await fetch(`${API_BASE}/playlist/queue`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to queue playlist items');
     }
     return res.json();
   },
