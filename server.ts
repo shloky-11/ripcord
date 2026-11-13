@@ -156,10 +156,75 @@ interface DatabaseStore {
   updatedAt: number;
 }
 
-// In-memory active process registry and version tracking
+// In-memory active process/timer registry and version tracking
 let queueItems: QueueItem[] = [];
 let queueVersion = 1;
 const activeProcesses: Map<string, ChildProcess> = new Map();
+const activeTimers: Map<string, NodeJS.Timeout> = new Map();
+
+function stopActiveJob(id: string) {
+  const timer = activeTimers.get(id);
+  if (timer) {
+    clearInterval(timer);
+    activeTimers.delete(id);
+  }
+  const proc = activeProcesses.get(id);
+  if (proc) {
+    try { proc.kill(); } catch {}
+    activeProcesses.delete(id);
+  }
+}
+
+function isNetscapeCookieFormat(raw: string): boolean {
+  const trimmed = raw.trim();
+  return (
+    trimmed.startsWith('# Netscape') ||
+    trimmed.startsWith('# HTTP Cookie File') ||
+    trimmed.includes('\t')
+  );
+}
+
+function convertJsonCookiesToNetscape(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.cookies) ? parsed.cookies : null;
+    if (!list || list.length === 0) return null;
+
+    const lines = ['# Netscape HTTP Cookie File'];
+    for (const c of list) {
+      if (!c || !c.name || c.value === undefined || !c.domain) continue;
+      const domain = String(c.domain);
+      const includeSubdomains = domain.startsWith('.') ? 'TRUE' : 'FALSE';
+      const pathVal = String(c.path || '/');
+      const secure = c.secure ? 'TRUE' : 'FALSE';
+      const expiry = c.expirationDate ? Math.floor(Number(c.expirationDate)) : 0;
+      lines.push(`${domain}\t${includeSubdomains}\t${pathVal}\t${secure}\t${expiry}\t${c.name}\t${c.value}`);
+    }
+    return lines.length > 1 ? lines.join('\n') + '\n' : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveNetscapeCookies(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (isNetscapeCookieFormat(trimmed)) return trimmed;
+  return convertJsonCookiesToNetscape(trimmed);
+}
+
+function syncCookiesFileSync(rawCookies: string) {
+  const netscape = resolveNetscapeCookies(rawCookies);
+  if (netscape) {
+    fs.writeFileSync(COOKIES_FILE, netscape, 'utf-8');
+  } else {
+    try {
+      if (fs.existsSync(COOKIES_FILE)) fs.unlinkSync(COOKIES_FILE);
+    } catch {}
+  }
+}
 
 // Prune old completed history to cap retained memory and disk serialization
 const MAX_COMPLETED_RETAINED = 100;
@@ -219,8 +284,9 @@ async function doSaveDatabase(): Promise<void> {
     await fs.promises.writeFile(tmpPath, serialized, 'utf-8');
     await fs.promises.rename(tmpPath, DB_FILE);
 
-    if (settings.cookies && settings.cookies.trim()) {
-      await fs.promises.writeFile(COOKIES_FILE, settings.cookies.trim(), 'utf-8');
+    const netscapeCookies = resolveNetscapeCookies(settings.cookies || '');
+    if (netscapeCookies) {
+      await fs.promises.writeFile(COOKIES_FILE, netscapeCookies, 'utf-8');
     } else {
       try {
         await fs.promises.unlink(COOKIES_FILE);
@@ -463,14 +529,24 @@ function startDownload(item: QueueItem) {
   const outFileName = `${sanitizedTitle}.${ext}`;
   const outFilePath = path.join(DOWNLOADS_DIR, `${item.id}_${outFileName}`);
 
-  // Determine if yt-dlp is available
+  const isSampleTestUrl = item.url.includes('example.com') || item.url.includes('sample-');
   const hasYtDlp = fs.existsSync(BIN_YTDLP);
 
-  if (hasYtDlp && !item.url.includes('example.com') && !item.url.includes('sample-')) {
+  if (isSampleTestUrl) {
+    // Test fixture streams for Quick Test Batch / sample URLs
+    executeHighSpeedSynthesizer(item, outFilePath, outFileName, ext);
+  } else if (hasYtDlp) {
     executeYtDlpDownload(item, outFilePath, outFileName, ext);
   } else {
-    // High-speed fallback / demo stream synthesizer
-    executeHighSpeedSynthesizer(item, outFilePath, outFileName, ext);
+    item.status = 'error';
+    item.progress = 0;
+    item.speed = 'Failed';
+    item.speedBytesPerSec = 0;
+    item.eta = '--:--';
+    item.error = 'yt-dlp binary is not available on the server. Restart the server to auto-install yt-dlp.';
+    bumpQueueVersion();
+    saveDatabase();
+    processQueue();
   }
 }
 
@@ -489,6 +565,9 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
   args.push('--retries', '5');
   args.push('--fragment-retries', '5');
   args.push('--no-mtime');
+  args.push('--no-playlist');
+  args.push('--no-warnings');
+  args.push('--js-runtimes', `node:${process.execPath}`);
 
   const ffmpegPath = findFfmpeg();
   if (ffmpegPath) {
@@ -524,8 +603,22 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
     }
   }
 
-  // Cookies if present
-  if (fs.existsSync(COOKIES_FILE)) {
+  // Cookies if present (supports Netscape cookies.txt, JSON export, and raw Cookie header strings)
+  const trimmedCookies = (settings.cookies || '').trim();
+  if (trimmedCookies) {
+    const netscape = resolveNetscapeCookies(trimmedCookies);
+    if (netscape) {
+      syncCookiesFileSync(trimmedCookies);
+      if (fs.existsSync(COOKIES_FILE)) {
+        args.push('--cookies', COOKIES_FILE);
+      }
+    } else {
+      const headerVal = trimmedCookies.replace(/^cookie:\s*/i, '').replace(/[\r\n]+/g, ' ').trim();
+      if (headerVal) {
+        args.push('--add-header', `Cookie:${headerVal}`);
+      }
+    }
+  } else if (fs.existsSync(COOKIES_FILE)) {
     args.push('--cookies', COOKIES_FILE);
   }
 
@@ -539,6 +632,7 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
   activeProcesses.set(item.id, proc);
 
   let hasBotBlock = false;
+  let stderrOutput = '';
   let lineRemainder = '';
 
   proc.stdout.on('data', (chunk) => {
@@ -572,8 +666,8 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
 
   proc.stderr.on('data', (chunk) => {
     const errText = chunk.toString();
-    console.warn(`[yt-dlp] ${errText.trim()}`);
-    if (errText.includes('Sign in to confirm you’re not a bot') || errText.includes('HTTP Error 429')) {
+    stderrOutput += errText;
+    if (/sign in to confirm you['’]re not a bot|http error 429|cookies-from-browser/i.test(errText)) {
       hasBotBlock = true;
     }
   });
@@ -581,8 +675,16 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
   proc.on('close', (code) => {
     activeProcesses.delete(item.id);
 
-    // Look for generated file in downloads directory
-    const matchingFiles = fs.readdirSync(DOWNLOADS_DIR).filter(f => f.startsWith(`${item.id}_`));
+    // Do not update if user paused, cancelled, or deleted the item
+    const currentItem = queueItems.find(i => i.id === item.id);
+    if (!currentItem || currentItem.status === 'paused' || currentItem.status === 'cancelled') {
+      return;
+    }
+
+    // Look for completed generated file in downloads directory (ignore .part / .ytdl temp files)
+    const matchingFiles = fs
+      .readdirSync(DOWNLOADS_DIR)
+      .filter(f => f.startsWith(`${item.id}_`) && !f.endsWith('.part') && !f.endsWith('.ytdl'));
 
     if (code === 0 && matchingFiles.length > 0) {
       const generatedFile = matchingFiles[0];
@@ -592,6 +694,7 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
       item.progress = 100;
       item.speed = '0 MB/s';
       item.eta = 'Done';
+      item.error = undefined;
       item.fileName = generatedFile.replace(`${item.id}_`, '');
       item.filePath = fullPath;
       item.fileSize = stats.size;
@@ -602,13 +705,21 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
       bumpQueueVersion();
       saveDatabase();
       processQueue();
-    } else if (hasBotBlock || code !== 0) {
-      // Fallback synthesis if remote media pipeline encounters rate limiting or upstream error
-      console.log(`yt-dlp pipeline returned error ${code}, invoking fallback stream synthesis for ${item.id}`);
-      executeHighSpeedSynthesizer(item, outFilePath, outFileName, ext, hasBotBlock);
     } else {
       item.status = 'error';
-      item.error = 'Download failed or interrupted.';
+      item.progress = 0;
+      item.speed = 'Failed';
+      item.speedBytesPerSec = 0;
+      item.eta = '--:--';
+      if (hasBotBlock) {
+        console.log(`[Ripcord] YouTube requested bot verification for ${item.id}; awaiting user cookies or local execution.`);
+        item.error = "YouTube blocked this cloud server IP ('Sign in to confirm you're not a bot'). Paste your YouTube cookies in Settings and click Retry, or run Ripcord locally.";
+      } else {
+        const lastLine = stderrOutput.trim().split('\n').pop() || '';
+        const cleanedReason = lastLine.replace(/^error:\s*/i, '').replace(/^\[youtube\]\s*[^:]+:\s*/i, '').trim();
+        console.log(`[Ripcord] Extractor exited (${code}) for ${item.id}${cleanedReason ? `: ${cleanedReason}` : ''}`);
+        item.error = cleanedReason || 'Download failed or video stream unavailable.';
+      }
       bumpQueueVersion();
       saveDatabase();
       processQueue();
@@ -617,8 +728,19 @@ function executeYtDlpDownload(item: QueueItem, outFilePath: string, outFileName:
 
   proc.on('error', (err) => {
     activeProcesses.delete(item.id);
-    console.error('yt-dlp process error:', err);
-    executeHighSpeedSynthesizer(item, outFilePath, outFileName, ext);
+    const currentItem = queueItems.find(i => i.id === item.id);
+    if (!currentItem || currentItem.status === 'paused' || currentItem.status === 'cancelled') {
+      return;
+    }
+    item.status = 'error';
+    item.progress = 0;
+    item.speed = 'Failed';
+    item.speedBytesPerSec = 0;
+    item.eta = '--:--';
+    item.error = `Extractor process unavailable: ${err.message}`;
+    bumpQueueVersion();
+    saveDatabase();
+    processQueue();
   });
 }
 
@@ -722,6 +844,13 @@ function executeHighSpeedSynthesizer(
   const speedMbps = settings.turboMode ? 28.5 : 16.2;
 
   const interval = setInterval(() => {
+    const currentItem = queueItems.find(i => i.id === item.id);
+    if (!currentItem || currentItem.status === 'paused' || currentItem.status === 'cancelled') {
+      clearInterval(interval);
+      activeTimers.delete(item.id);
+      return;
+    }
+
     currentStep++;
     const progress = Math.min(Math.round((currentStep / totalSteps) * 98), 98);
     item.progress = progress;
@@ -734,6 +863,7 @@ function executeHighSpeedSynthesizer(
 
     if (currentStep >= totalSteps) {
       clearInterval(interval);
+      activeTimers.delete(item.id);
       item.status = 'processing';
       item.speed = 'Finalizing file...';
 
@@ -744,14 +874,18 @@ function executeHighSpeedSynthesizer(
         const ffmpegArgs: string[] = [];
 
         if (isAudio) {
-          ffmpegArgs.push(
-            '-f', 'lavfi',
-            '-i', `sine=frequency=440:duration=${durationSec}`,
-            '-c:a', 'libmp3lame',
-            '-b:a', '128k',
-            '-y',
-            outFilePath
-          );
+          const codec = (ext || 'mp3').toLowerCase();
+          ffmpegArgs.push('-f', 'lavfi', '-i', `sine=frequency=440:duration=${durationSec}`);
+          if (codec === 'wav') {
+            ffmpegArgs.push('-c:a', 'pcm_s16le');
+          } else if (codec === 'flac') {
+            ffmpegArgs.push('-c:a', 'flac');
+          } else if (codec === 'm4a' || codec === 'aac') {
+            ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k');
+          } else {
+            ffmpegArgs.push('-c:a', 'libmp3lame', '-b:a', '128k');
+          }
+          ffmpegArgs.push('-y', outFilePath);
         } else {
           ffmpegArgs.push(
             '-f', 'lavfi',
@@ -771,13 +905,23 @@ function executeHighSpeedSynthesizer(
         }
 
         const ffmpegProc = spawn(ffmpegPath, ffmpegArgs);
+        activeProcesses.set(item.id, ffmpegProc);
 
         ffmpegProc.on('close', (_fCode) => {
+          activeProcesses.delete(item.id);
+          const stillActive = queueItems.find(i => i.id === item.id);
+          if (!stillActive || stillActive.status === 'paused' || stillActive.status === 'cancelled') {
+            return;
+          }
+          if (!fs.existsSync(outFilePath)) {
+            writeSynthesizedMediaFile(outFilePath, isAudio);
+          }
           finalizeCompletedItem(item, outFilePath, outFileName, botProtectionEncountered);
         });
 
         ffmpegProc.on('error', (err) => {
-          console.warn('ffmpeg spawn failed, writing standalone media container:', err.message);
+          activeProcesses.delete(item.id);
+          console.log('[Ripcord] ffmpeg spawn skipped, writing standalone media container:', err.message);
           writeSynthesizedMediaFile(outFilePath, isAudio);
           finalizeCompletedItem(item, outFilePath, outFileName, botProtectionEncountered);
         });
@@ -788,6 +932,7 @@ function executeHighSpeedSynthesizer(
       }
     }
   }, 250);
+  activeTimers.set(item.id, interval);
 }
 
 // Single-pass computation for aggregate system stats
@@ -904,7 +1049,8 @@ app.get('/api/settings', (_req: Request, res: Response) => {
 
 app.post('/api/settings', (req: Request, res: Response) => {
   settings = { ...settings, ...req.body };
-  saveDatabase();
+  syncCookiesFileSync(settings.cookies || '');
+  saveDatabase(true);
   processQueue();
   res.json(settings);
 });
@@ -1075,14 +1221,10 @@ app.post('/api/queue/sample-batch', async (_req: Request, res: Response) => {
 app.post('/api/queue/pause/:id', (req: Request, res: Response) => {
   const item = queueItems.find(i => i.id === req.params.id);
   if (item) {
-    const proc = activeProcesses.get(item.id);
-    if (proc) {
-      proc.kill();
-      activeProcesses.delete(item.id);
-    }
     item.status = 'paused';
     item.speed = 'Paused';
     item.speedBytesPerSec = 0;
+    stopActiveJob(item.id);
     bumpQueueVersion();
     saveDatabase();
     processQueue();
@@ -1105,14 +1247,10 @@ app.post('/api/queue/resume/:id', (req: Request, res: Response) => {
 app.post('/api/queue/cancel/:id', (req: Request, res: Response) => {
   const item = queueItems.find(i => i.id === req.params.id);
   if (item) {
-    const proc = activeProcesses.get(item.id);
-    if (proc) {
-      proc.kill();
-      activeProcesses.delete(item.id);
-    }
     item.status = 'cancelled';
     item.speed = 'Cancelled';
     item.speedBytesPerSec = 0;
+    stopActiveJob(item.id);
     bumpQueueVersion();
     saveDatabase();
     processQueue();
@@ -1123,6 +1261,7 @@ app.post('/api/queue/cancel/:id', (req: Request, res: Response) => {
 app.post('/api/queue/retry/:id', (req: Request, res: Response) => {
   const item = queueItems.find(i => i.id === req.params.id);
   if (item) {
+    stopActiveJob(item.id);
     item.status = 'queued';
     item.progress = 0;
     item.error = undefined;
@@ -1137,15 +1276,11 @@ app.post('/api/queue/retry/:id', (req: Request, res: Response) => {
 app.post('/api/queue/delete/:id', (req: Request, res: Response) => {
   const item = queueItems.find(i => i.id === req.params.id);
   if (item) {
-    const proc = activeProcesses.get(item.id);
-    if (proc) {
-      proc.kill();
-      activeProcesses.delete(item.id);
-    }
+    queueItems = queueItems.filter(i => i.id !== req.params.id);
+    stopActiveJob(item.id);
     if (item.filePath) {
       fs.promises.unlink(item.filePath).catch(() => {});
     }
-    queueItems = queueItems.filter(i => i.id !== req.params.id);
     bumpQueueVersion();
     saveDatabase();
     processQueue();
@@ -1155,15 +1290,11 @@ app.post('/api/queue/delete/:id', (req: Request, res: Response) => {
 
 app.post('/api/queue/pause-all', (_req: Request, res: Response) => {
   for (const item of queueItems) {
-    if (item.status === 'downloading' || item.status === 'queued') {
-      const proc = activeProcesses.get(item.id);
-      if (proc) {
-        proc.kill();
-        activeProcesses.delete(item.id);
-      }
+    if (item.status === 'downloading' || item.status === 'queued' || item.status === 'processing') {
       item.status = 'paused';
       item.speed = 'Paused';
       item.speedBytesPerSec = 0;
+      stopActiveJob(item.id);
     }
   }
   bumpQueueVersion();
@@ -1210,6 +1341,16 @@ app.post('/api/queue/mark-saved/:id', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+function getMediaMimeType(item: QueueItem): string {
+  if (item.format !== 'audio') return 'video/mp4';
+  const ext = (item.fileName ? path.extname(item.fileName).slice(1) : item.audioCodec || 'mp3').toLowerCase();
+  if (ext === 'm4a' || ext === 'aac') return 'audio/mp4';
+  if (ext === 'flac') return 'audio/flac';
+  if (ext === 'wav') return 'audio/wav';
+  if (ext === 'webm' || ext === 'opus') return 'audio/webm';
+  return 'audio/mpeg';
+}
+
 // Stream or download completed file
 app.get('/api/download/file/:id', (req: Request, res: Response) => {
   const item = queueItems.find(i => i.id === req.params.id);
@@ -1218,7 +1359,7 @@ app.get('/api/download/file/:id', (req: Request, res: Response) => {
   }
 
   const stat = fs.statSync(item.filePath);
-  const mimeType = item.format === 'audio' ? 'audio/mpeg' : 'video/mp4';
+  const mimeType = getMediaMimeType(item);
 
   res.setHeader('Content-Length', stat.size);
   res.setHeader('Content-Type', mimeType);
@@ -1239,7 +1380,7 @@ app.get('/api/download/stream/:id', (req: Request, res: Response) => {
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
   const range = req.headers.range;
-  const mimeType = item.format === 'audio' ? 'audio/mpeg' : 'video/mp4';
+  const mimeType = getMediaMimeType(item);
 
   if (range) {
     const parts = range.replace(/bytes=/, '').split('-');

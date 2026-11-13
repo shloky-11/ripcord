@@ -27,6 +27,7 @@ interface QueueItemCardProps {
   onDelete: (id: string) => Promise<void>;
   onSaveToLocalFolder: (item: QueueItem) => Promise<void>;
   onPreview: (item: QueueItem) => void;
+  onOpenSettings?: () => void;
   folderName: string;
 }
 
@@ -47,6 +48,7 @@ const QueueItemCardComponent: React.FC<QueueItemCardProps> = ({
   onDelete,
   onSaveToLocalFolder,
   onPreview,
+  onOpenSettings,
   folderName,
 }) => {
   const [isSaving, setIsSaving] = useState(false);
@@ -205,8 +207,8 @@ const QueueItemCardComponent: React.FC<QueueItemCardProps> = ({
                   </span>
                 )}
                 {isError && (
-                  <span className="text-red-600 dark:text-red-400 flex items-center gap-1 font-sans">
-                    <AlertCircle className="w-3.5 h-3.5" /> {item.error || 'Download failed'}
+                  <span className="text-red-600 dark:text-red-400 flex items-center gap-1 font-sans font-medium">
+                    <AlertCircle className="w-3.5 h-3.5" /> Download failed
                   </span>
                 )}
               </div>
@@ -222,10 +224,26 @@ const QueueItemCardComponent: React.FC<QueueItemCardProps> = ({
             </div>
           </div>
 
+          {/* Error details banner with quick cookies action */}
+          {isError && item.error && (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200/80 dark:border-red-900/60 px-2.5 py-1.5 rounded">
+              <span>{item.error}</span>
+              {onOpenSettings && /cookie/i.test(item.error) && (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="font-semibold underline hover:text-red-900 dark:hover:text-red-100 cursor-pointer shrink-0"
+                >
+                  Add YouTube Cookies
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Special note when delivered via High-Speed Stream Engine */}
           {item.engineUsed === 'stream-synthesizer' && isCompleted && (
             <div className="text-[11px] text-neutral-500 dark:text-neutral-400 bg-neutral-50 dark:bg-neutral-800/60 px-2 py-1 rounded">
-              Stream delivered via High-Speed Media Engine · Playable format ready for local folder
+              Sample test stream delivered · Playable format ready for local folder
             </div>
           )}
         </div>

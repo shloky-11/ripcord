@@ -583,6 +583,7 @@ export default function App() {
                   onDelete={handleDelete}
                   onSaveToLocalFolder={handleSaveToFolder}
                   onPreview={(it) => setPreviewItem(it)}
+                  onOpenSettings={() => setIsSettingsModalOpen(true)}
                   folderName={folderName}
                 />
               ))}

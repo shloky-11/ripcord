@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Zap, 
@@ -37,6 +37,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showCookieHelp, setShowCookieHelp] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setFormData({ ...settings });
+    }
+  }, [isOpen, settings]);
 
   if (!isOpen) return null;
 
@@ -168,10 +174,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {showCookieHelp && (
               <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-xs text-blue-900 dark:text-blue-200 flex flex-col gap-1">
                 <p>
-                  <strong>Notice:</strong> YouTube sometimes displays "Sign in to confirm you're not a bot" on datacenter cloud servers.
+                  <strong>Notice:</strong> YouTube blocks cloud server IPs with "Sign in to confirm you're not a bot" unless you supply your YouTube session cookies.
                 </p>
                 <p>
-                  If you run this app locally on your own computer (<code className="font-mono">npm run dev</code>), cookies are typically unnecessary. When hosted in cloud environments, pasting your exported Netscape <code className="font-mono">cookies.txt</code> here guarantees 100% direct access to age-restricted, high-bitrate, and 4K streams!
+                  You can export cookies from YouTube in your browser using an extension like <strong>Get cookies.txt LOCALLY</strong> (Netscape format) or <strong>Cookie-Editor</strong> (JSON export), and paste them below.
                 </p>
               </div>
             )}
@@ -180,7 +186,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               rows={3}
               value={formData.cookies}
               onChange={(e) => setFormData({ ...formData, cookies: e.target.value })}
-              placeholder="Paste Netscape format cookies or session cookie string here (optional)..."
+              placeholder="Paste Netscape cookies.txt, JSON cookie export, or raw Cookie header string here..."
               className="w-full p-2.5 font-mono text-[11px] rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
             />
           </div>
